@@ -44,6 +44,10 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Create Android platform files
+        working-directory: mobile
+        run: flutter create . --project-name cellen --org com.cellen --platforms android
+
       - name: Flutter pub get
         working-directory: mobile
         run: flutter pub get
@@ -79,6 +83,10 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Create iOS platform files
+        working-directory: mobile
+        run: flutter create . --project-name cellen --org com.cellen --platforms ios
+
       - name: Flutter pub get
         working-directory: mobile
         run: flutter pub get
@@ -110,6 +118,10 @@ jobs:
           flutter-version: '3.44.6'
           channel: stable
           cache: true
+
+      - name: Create web platform files
+        working-directory: mobile
+        run: flutter create . --project-name cellen --org com.cellen --platforms web
 
       - name: Flutter pub get
         working-directory: mobile
