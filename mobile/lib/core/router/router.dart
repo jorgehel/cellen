@@ -17,6 +17,8 @@ import '../../features/admin/finance/expenses_screen.dart';
 import '../../features/admin/academic/turmas_screen.dart';
 import '../../features/admin/academic/enrollments_screen.dart';
 import '../../features/admin/absences/absences_screen.dart';
+import '../../features/platform/dashboard/platform_dashboard_screen.dart';
+import '../../features/platform/schools/schools_screen.dart';
 import '../../features/teacher/dashboard/teacher_dashboard_screen.dart';
 import '../../features/teacher/caderneta/caderneta_list_screen.dart';
 import '../../features/teacher/caderneta/caderneta_form_screen.dart';
@@ -27,6 +29,102 @@ import '../../features/parent/menu/food_menu_screen.dart';
 // ---------------------------------------------------------------------------
 // Shell Widgets
 // ---------------------------------------------------------------------------
+
+class PlatformShell extends ConsumerStatefulWidget {
+  final Widget child;
+  const PlatformShell({super.key, required this.child});
+
+  @override
+  ConsumerState<PlatformShell> createState() => _PlatformShellState();
+}
+
+class _PlatformShellState extends ConsumerState<PlatformShell> {
+  int _selectedIndex = 0;
+
+  static const _routes = ['/platform', '/platform/schools'];
+
+  static const _destinations = [
+    (icon: Icons.dashboard, label: 'Dashboard'),
+    (icon: Icons.school, label: 'Escolas'),
+  ];
+
+  void _onDestinationSelected(int index) {
+    setState(() => _selectedIndex = index);
+    context.go(_routes[index]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isWide = MediaQuery.of(context).size.width >= 600;
+    final auth = ref.read(authProvider);
+
+    if (isWide) {
+      return Scaffold(
+        body: Row(
+          children: [
+            NavigationRail(
+              selectedIndex: _selectedIndex,
+              onDestinationSelected: _onDestinationSelected,
+              labelType: NavigationRailLabelType.all,
+              leading: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Column(
+                  children: [
+                    const CircleAvatar(
+                      radius: 20,
+                      child: Icon(Icons.admin_panel_settings),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      auth.username ?? 'Platform',
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+                  ],
+                ),
+              ),
+              trailing: Expanded(
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: IconButton(
+                      icon: const Icon(Icons.logout),
+                      tooltip: 'Sair',
+                      onPressed: () =>
+                          ref.read(authProvider.notifier).logout(),
+                    ),
+                  ),
+                ),
+              ),
+              destinations: _destinations
+                  .map((d) => NavigationRailDestination(
+                        icon: Icon(d.icon),
+                        label: Text(d.label),
+                      ))
+                  .toList(),
+            ),
+            const VerticalDivider(thickness: 1, width: 1),
+            Expanded(child: widget.child),
+          ],
+        ),
+      );
+    } else {
+      return Scaffold(
+        body: widget.child,
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _selectedIndex,
+          onDestinationSelected: _onDestinationSelected,
+          destinations: _destinations
+              .map((d) => NavigationDestination(
+                    icon: Icon(d.icon),
+                    label: d.label,
+                  ))
+              .toList(),
+        ),
+      );
+    }
+  }
+}
 
 class AdminShell extends ConsumerStatefulWidget {
   final Widget child;
@@ -364,10 +462,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (!isAuthenticated && !isLoginPage) return '/login';
       if (isAuthenticated && isLoginPage) {
         return switch (authState.role) {
-          UserRole.platformAdmin || UserRole.schoolAdmin => '/admin',
+          UserRole.platformAdmin => '/platform',
+          UserRole.schoolAdmin => '/admin',
           UserRole.teacher || UserRole.staff => '/teacher',
           UserRole.parent => '/parent',
-          null => '/admin',
+          null => '/login',
         };
       }
       return null;
@@ -378,7 +477,22 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, __) => const LoginScreen(),
       ),
 
-      // Admin shell
+      // Platform admin shell
+      ShellRoute(
+        builder: (context, state, child) => PlatformShell(child: child),
+        routes: [
+          GoRoute(
+            path: '/platform',
+            builder: (_, __) => const PlatformDashboardScreen(),
+          ),
+          GoRoute(
+            path: '/platform/schools',
+            builder: (_, __) => const SchoolsScreen(),
+          ),
+        ],
+      ),
+
+      // School admin shell
       ShellRoute(
         builder: (context, state, child) => AdminShell(child: child),
         routes: [
