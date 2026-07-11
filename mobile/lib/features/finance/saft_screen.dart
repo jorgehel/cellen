@@ -1,12 +1,11 @@
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/download_helper.dart'
+    if (dart.library.html) '../../core/utils/download_helper_web.dart';
 
 // ---------------------------------------------------------------------------
 // Screen
@@ -63,14 +62,7 @@ class _SaftScreenState extends ConsumerState<SaftScreen> {
       );
 
       final xmlContent = data is String ? data : data.toString();
-
-      // Trigger download via dart:html on web
-      final blob = html.Blob([xmlContent], 'application/xml');
-      final url = html.Url.createObjectUrlFromBlob(blob);
-      final anchor = html.AnchorElement(href: url)
-        ..setAttribute('download', 'SAFT_${DateTime.now().year}.xml')
-        ..click();
-      html.Url.revokeObjectUrl(url);
+      downloadXml(xmlContent, 'SAFT_${DateTime.now().year}.xml');
 
       setState(() {
         _isLoading = false;
@@ -154,8 +146,7 @@ class _SaftScreenState extends ConsumerState<SaftScreen> {
                               'O ficheiro SAF-T-AO é exigido pela AGT para auditoria fiscal. '
                               'O ficheiro gerado deve ser submetido nos prazos legais.',
                               style: TextStyle(
-                                  color: AppTheme.warning,
-                                  fontSize: 13),
+                                  color: AppTheme.warning, fontSize: 13),
                             ),
                           ),
                         ],
@@ -242,8 +233,8 @@ class _SaftScreenState extends ConsumerState<SaftScreen> {
                               child: CircularProgressIndicator(
                                   strokeWidth: 2, color: Colors.white))
                           : const Icon(Icons.download),
-                      label: Text(
-                          _isLoading ? 'A gerar...' : 'Gerar SAF-T'),
+                      label:
+                          Text(_isLoading ? 'A gerar...' : 'Gerar SAF-T'),
                     ),
                   ],
                 ),
