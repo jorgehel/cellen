@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/models/attendance.dart';
+import '../../../core/theme/app_theme.dart';
 
 // ---------------------------------------------------------------------------
 // Providers
@@ -34,8 +35,7 @@ final adminAttendanceTodayProvider =
         .toList();
     final checkedIn =
         records.where((r) => r.status == 'present' || r.status == 'late').length;
-    final absent =
-        records.where((r) => r.status == 'absent').length;
+    final absent = records.where((r) => r.status == 'absent').length;
     return AttendanceSummary(
       totalEnrolled: records.length,
       checkedIn: checkedIn,
@@ -88,6 +88,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
     final attendanceAsync = ref.watch(adminAttendanceTodayProvider);
     final unreadAsync = ref.watch(adminUnreadNotifProvider);
     final financeAsync = ref.watch(adminFinanceProvider);
+    final theme = Theme.of(context);
 
     final now = DateTime.now();
     final hour = now.hour;
@@ -96,7 +97,8 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
         : hour < 18
             ? 'Boa tarde'
             : 'Boa noite';
-    final dateStr = DateFormat('EEEE, d \'de\' MMMM yyyy', 'pt_PT').format(now);
+    final dateStr =
+        DateFormat('EEEE, d \'de\' MMMM yyyy', 'pt_PT').format(now);
 
     void refresh() {
       ref.invalidate(adminChildrenCountProvider);
@@ -107,11 +109,41 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Cellen — ${auth.schoolId ?? 'Admin'}'),
+        title: const Text('Dashboard'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_outlined),
-            onPressed: () => context.push('/notifications'),
+          unreadAsync.when(
+            loading: () => const SizedBox.shrink(),
+            error: (_, __) => const SizedBox.shrink(),
+            data: (count) => Stack(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.notifications_outlined),
+                  onPressed: () => context.push('/notifications'),
+                ),
+                if (count > 0)
+                  Positioned(
+                    right: 6,
+                    top: 6,
+                    child: Container(
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: AppTheme.danger,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: Text(
+                          count > 9 ? '9+' : '$count',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -123,168 +155,191 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
         onRefresh: () async => refresh(),
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Welcome card
-              Card(
-                elevation: 0,
-                color: Theme.of(context).colorScheme.primaryContainer,
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '$greeting, ${auth.username ?? 'Administrador'}!',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onPrimaryContainer,
-                                  ),
+              // ── Header card ──
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '$greeting, ${auth.username ?? 'Administrador'}!',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF1E1B4B),
+                              letterSpacing: -0.3,
                             ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            dateStr,
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 13,
+                            ),
+                          ),
+                          if (auth.schoolId != null) ...[
                             const SizedBox(height: 4),
-                            Text(
-                              dateStr,
-                              style: TextStyle(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onPrimaryContainer
-                                    .withOpacity(0.75),
-                              ),
+                            Row(
+                              children: [
+                                Icon(Icons.school_outlined,
+                                    size: 14,
+                                    color: AppTheme.primary),
+                                const SizedBox(width: 4),
+                                Text(
+                                  auth.schoolId!,
+                                  style: TextStyle(
+                                    color: AppTheme.primary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
+                        ],
+                      ),
+                    ),
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: AppTheme.gradientBlue,
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
+                        borderRadius: BorderRadius.circular(14),
                       ),
-                      Icon(
-                        Icons.admin_panel_settings,
-                        size: 42,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onPrimaryContainer
-                            .withOpacity(0.6),
-                      ),
-                    ],
-                  ),
+                      child: const Icon(Icons.admin_panel_settings,
+                          color: Colors.white, size: 28),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 20),
 
-              // Quick stats 2x2 grid
+              // ── Stat cards ──
               Text(
                 'Resumo do Dia',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w700),
+                style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey.shade800),
               ),
               const SizedBox(height: 12),
               GridView.count(
                 crossAxisCount:
                     MediaQuery.of(context).size.width >= 600 ? 4 : 2,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                childAspectRatio: 1.3,
+                childAspectRatio: 1.35,
                 children: [
-                  // Crianças Ativas
                   _StatCard(
                     label: 'Crianças Activas',
+                    gradient: AppTheme.gradientBlue,
+                    icon: Icons.child_care,
                     valueWidget: childrenAsync.when(
                       loading: () => const SizedBox(
                           width: 20,
                           height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2)),
-                      error: (_, __) => const Icon(Icons.error, color: Colors.red, size: 20),
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white)),
+                      error: (_, __) =>
+                          const Icon(Icons.error, color: Colors.white70),
                       data: (count) => Text(
                         '$count',
-                        style: Theme.of(context)
-                            .textTheme
-                            .headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w800),
                       ),
                     ),
-                    icon: Icons.child_care,
-                    color: Colors.blue,
                     onTap: () => context.go('/admin/children'),
                   ),
-                  // Presenças Hoje
                   _StatCard(
                     label: 'Presenças Hoje',
+                    gradient: AppTheme.gradientGreen,
+                    icon: Icons.how_to_reg,
                     valueWidget: attendanceAsync.when(
                       loading: () => const SizedBox(
                           width: 20,
                           height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2)),
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white)),
                       error: (_, __) =>
-                          const Icon(Icons.error, color: Colors.red, size: 20),
-                      data: (summary) => Text(
-                        '${summary.checkedIn}/${summary.totalEnrolled}',
-                        style: Theme.of(context)
-                            .textTheme
-                            .headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.bold),
+                          const Icon(Icons.error, color: Colors.white70),
+                      data: (s) => Text(
+                        '${s.checkedIn}/${s.totalEnrolled}',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w800),
                       ),
                     ),
-                    icon: Icons.how_to_reg,
-                    color: Colors.green,
                     onTap: () => context.push('/teacher/attendance'),
                   ),
-                  // Faturas Pendentes
                   _StatCard(
                     label: 'Faturas Pendentes',
+                    gradient: AppTheme.gradientAmber,
+                    icon: Icons.receipt_long,
                     valueWidget: financeAsync.when(
                       loading: () => const SizedBox(
                           width: 20,
                           height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2)),
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white)),
                       error: (_, __) =>
-                          const Icon(Icons.error, color: Colors.red, size: 20),
+                          const Icon(Icons.error, color: Colors.white70),
                       data: (finance) {
-                        final pending = finance['outstanding_invoices'] as int? ??
-                            finance['pending_invoices'] as int? ?? 0;
+                        final pending =
+                            finance['outstanding_invoices'] as int? ??
+                                finance['pending_invoices'] as int? ??
+                                0;
                         return Text(
                           '$pending',
-                          style: Theme.of(context)
-                              .textTheme
-                              .headlineSmall
-                              ?.copyWith(fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 28,
+                              fontWeight: FontWeight.w800),
                         );
                       },
                     ),
-                    icon: Icons.receipt_long,
-                    color: Colors.orange,
                     onTap: () => context.go('/admin/finance/invoices'),
                   ),
-                  // Mensagens Não Lidas
                   _StatCard(
-                    label: 'Não Lidas',
+                    label: 'Mensagens',
+                    gradient: AppTheme.gradientRose,
+                    icon: Icons.chat_bubble_outline,
                     valueWidget: unreadAsync.when(
                       loading: () => const SizedBox(
                           width: 20,
                           height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2)),
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white)),
                       error: (_, __) =>
-                          const Icon(Icons.error, color: Colors.red, size: 20),
+                          const Icon(Icons.error, color: Colors.white70),
                       data: (count) => Text(
                         '$count',
-                        style: Theme.of(context)
-                            .textTheme
-                            .headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w800),
                       ),
                     ),
-                    icon: Icons.chat_bubble_outline,
-                    color: Colors.purple,
                     onTap: () => context.push('/messages'),
                   ),
                 ],
@@ -292,86 +347,84 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
 
               const SizedBox(height: 24),
 
-              // Quick Actions
+              // ── Quick Actions ──
               Text(
-                'Ações Rápidas',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w700),
+                'Acções Rápidas',
+                style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey.shade800),
               ),
               const SizedBox(height: 12),
               GridView.count(
                 crossAxisCount: 4,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 childAspectRatio: 0.9,
                 children: [
-                  _QuickActionButton(
+                  _QuickAction(
                     icon: Icons.how_to_reg,
                     label: 'Presenças',
-                    color: Colors.green,
+                    color: AppTheme.success,
                     onTap: () => context.push('/teacher/attendance'),
                   ),
-                  _QuickActionButton(
+                  _QuickAction(
                     icon: Icons.receipt,
-                    label: 'Faturas',
-                    color: Colors.orange,
+                    label: 'Nova Fatura',
+                    color: AppTheme.warning,
                     onTap: () => context.go('/admin/finance/invoices'),
                   ),
-                  _QuickActionButton(
-                    icon: Icons.warning_amber,
+                  _QuickAction(
+                    icon: Icons.warning_amber_rounded,
                     label: 'Ocorrências',
-                    color: Colors.red,
+                    color: AppTheme.danger,
                     onTap: () => context.push('/incidents'),
                   ),
-                  _QuickActionButton(
+                  _QuickAction(
                     icon: Icons.event,
                     label: 'Calendário',
-                    color: Colors.purple,
+                    color: const Color(0xFF8B5CF6),
                     onTap: () => context.push('/events'),
                   ),
-                  _QuickActionButton(
-                    icon: Icons.photo_library,
-                    label: 'Galeria',
-                    color: Colors.teal,
-                    onTap: () => context.push('/photos'),
-                  ),
-                  _QuickActionButton(
-                    icon: Icons.notifications,
-                    label: 'Notificações',
-                    color: Colors.blue,
-                    onTap: () => context.push('/notifications'),
-                  ),
-                  _QuickActionButton(
+                  _QuickAction(
                     icon: Icons.child_care,
                     label: 'Crianças',
-                    color: Colors.indigo,
+                    color: AppTheme.primary,
                     onTap: () => context.go('/admin/children'),
                   ),
-                  _QuickActionButton(
+                  _QuickAction(
                     icon: Icons.people,
                     label: 'Funcionários',
-                    color: Colors.brown,
+                    color: const Color(0xFF0EA5E9),
                     onTap: () => context.go('/admin/employees'),
+                  ),
+                  _QuickAction(
+                    icon: Icons.chat_bubble_outline,
+                    label: 'Mensagens',
+                    color: AppTheme.info,
+                    onTap: () => context.push('/messages'),
+                  ),
+                  _QuickAction(
+                    icon: Icons.account_balance_wallet,
+                    label: 'Finanças',
+                    color: AppTheme.success,
+                    onTap: () => context.go('/admin/finance'),
                   ),
                 ],
               ),
 
               const SizedBox(height: 24),
 
-              // Recent Attendance Activity
+              // ── Recent Activity ──
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
                     'Actividade Recente',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w700),
+                    style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: Colors.grey.shade800),
                   ),
                   TextButton(
                     onPressed: () => context.push('/teacher/attendance'),
@@ -387,23 +440,61 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                 error: (e, _) => Text(
                   'Erro ao carregar actividade: $e',
                   style: TextStyle(
-                      color: Theme.of(context).colorScheme.error),
+                      color: theme.colorScheme.error),
                 ),
                 data: (summary) {
-                  final recent = summary.records.take(3).toList();
+                  final recent = summary.records.take(5).toList();
                   if (recent.isEmpty) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
+                    return Container(
+                      padding: const EdgeInsets.symmetric(vertical: 32),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
                       child: Center(
-                        child: Text('Sem registos de presença hoje',
-                            style: TextStyle(color: Colors.grey)),
+                        child: Column(
+                          children: [
+                            Icon(Icons.how_to_reg,
+                                size: 64, color: Colors.grey.shade300),
+                            const SizedBox(height: 12),
+                            Text('Sem registos de presença hoje',
+                                style: TextStyle(
+                                    color: Colors.grey.shade500)),
+                            const SizedBox(height: 8),
+                            TextButton(
+                              onPressed: refresh,
+                              child: const Text('Actualizar'),
+                            ),
+                          ],
+                        ),
                       ),
                     );
                   }
-                  return Column(
-                    children: recent
-                        .map((r) => _AttendanceActivityTile(record: r))
-                        .toList(),
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Column(
+                      children: recent
+                          .asMap()
+                          .entries
+                          .map((entry) {
+                        final isLast = entry.key == recent.length - 1;
+                        return Column(
+                          children: [
+                            _AttendanceActivityTile(
+                                record: entry.value),
+                            if (!isLast)
+                              Divider(
+                                  height: 1,
+                                  color: Colors.grey.shade100),
+                          ],
+                        );
+                      }).toList(),
+                    ),
                   );
                 },
               ),
@@ -423,65 +514,74 @@ class _StatCard extends StatelessWidget {
   final String label;
   final Widget valueWidget;
   final IconData icon;
-  final Color color;
+  final List<Color> gradient;
   final VoidCallback? onTap;
 
   const _StatCard({
     required this.label,
     required this.valueWidget,
     required this.icon,
-    required this.color,
+    required this.gradient,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.15)),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              CircleAvatar(
-                radius: 16,
-                backgroundColor: color.withOpacity(0.15),
-                child: Icon(icon, color: color, size: 16),
-              ),
-              const Spacer(),
-              valueWidget,
-              const SizedBox(height: 2),
-              Text(
-                label,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: gradient,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: gradient.first.withOpacity(0.35),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Spacer(),
+                Icon(icon, color: Colors.white.withOpacity(0.8), size: 22),
+              ],
+            ),
+            const Spacer(),
+            valueWidget,
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _QuickActionButton extends StatelessWidget {
+class _QuickAction extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color;
   final VoidCallback onTap;
 
-  const _QuickActionButton({
+  const _QuickAction({
     required this.icon,
     required this.label,
     required this.color,
@@ -490,29 +590,37 @@ class _QuickActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return GestureDetector(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
       child: Container(
         decoration: BoxDecoration(
-          color: color.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.2)),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.grey.shade200),
         ),
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.all(10),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: color, size: 26),
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 22),
+            ),
             const SizedBox(height: 6),
             Text(
               label,
               style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
-                  color: color.withOpacity(0.85)),
+                  color: Colors.grey.shade700),
               textAlign: TextAlign.center,
               maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
@@ -531,64 +639,79 @@ class _AttendanceActivityTile extends StatelessWidget {
     final initials = record.childName.isNotEmpty
         ? record.childName.trim().split(' ').take(2).map((w) => w[0]).join()
         : '?';
-    Color statusColor;
+
+    Color bgColor;
+    Color textColor;
     String statusLabel;
     switch (record.status) {
       case 'present':
-        statusColor = Colors.green;
+        bgColor = const Color(0xFFD1FAE5);
+        textColor = const Color(0xFF065F46);
         statusLabel = 'Presente';
         break;
       case 'late':
-        statusColor = Colors.orange;
+        bgColor = const Color(0xFFFEF3C7);
+        textColor = const Color(0xFF92400E);
         statusLabel = 'Tarde';
         break;
       case 'absent':
-        statusColor = Colors.red;
+        bgColor = const Color(0xFFFEE2E2);
+        textColor = const Color(0xFF991B1B);
         statusLabel = 'Ausente';
         break;
       default:
-        statusColor = Colors.grey;
+        bgColor = Colors.grey.shade100;
+        textColor = Colors.grey.shade700;
         statusLabel = record.status;
     }
 
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.only(bottom: 6),
-      child: ListTile(
-        dense: true,
-        leading: CircleAvatar(
-          radius: 18,
-          backgroundColor:
-              Theme.of(context).colorScheme.primaryContainer,
-          child: Text(
-            initials.toUpperCase(),
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).colorScheme.onPrimaryContainer,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: AppTheme.primary.withOpacity(0.1),
+            child: Text(
+              initials.toUpperCase(),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.primary,
+              ),
             ),
           ),
-        ),
-        title: Text(record.childName,
-            style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: record.checkInTime != null
-            ? Text('Entrada: ${record.checkInTime}')
-            : null,
-        trailing: Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-            color: statusColor.withOpacity(0.12),
-            borderRadius: BorderRadius.circular(10),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(record.childName,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w600, fontSize: 14)),
+                if (record.checkInTime != null)
+                  Text('Entrada: ${record.checkInTime}',
+                      style: TextStyle(
+                          fontSize: 12, color: Colors.grey.shade500)),
+              ],
+            ),
           ),
-          child: Text(
-            statusLabel,
-            style: TextStyle(
-                color: statusColor,
-                fontSize: 11,
-                fontWeight: FontWeight.w600),
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              statusLabel,
+              style: TextStyle(
+                  color: textColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600),
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

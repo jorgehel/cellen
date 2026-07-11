@@ -40,7 +40,7 @@ class PhotoResponse(BaseModel):
 
 # ─── Endpoints ────────────────────────────────────────────────────────────────
 
-@router.get("/", response_model=List[PhotoResponse])
+@router.get("", response_model=List[PhotoResponse])
 async def list_photos(
     turma_id: Optional[uuid.UUID] = None,
     from_date: Optional[date] = None,

@@ -69,7 +69,7 @@ class EventResponse(BaseModel):
 
 # ─── Endpoints ────────────────────────────────────────────────────────────────
 
-@router.get("/", response_model=List[EventResponse])
+@router.get("", response_model=List[EventResponse])
 async def list_events(
     from_date: Optional[date] = None,
     to_date: Optional[date] = None,

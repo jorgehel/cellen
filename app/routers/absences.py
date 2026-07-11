@@ -14,7 +14,7 @@ from app.schemas.absence import AbsenceCreate, AbsenceResponse, AbsenceSummary, 
 router = APIRouter(prefix="/absences", tags=["Absences"])
 
 
-@router.get("/", response_model=list[AbsenceResponse])
+@router.get("", response_model=list[AbsenceResponse])
 async def list_absences(
     skip: int = 0,
     limit: int = 50,

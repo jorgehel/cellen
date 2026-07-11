@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_school_id, require_school_admin, require_teacher
+from app.core.dependencies import get_school_id, require_school_admin, require_teacher, get_current_user
 from app.models.caderneta import Caderneta
 from app.schemas.caderneta import CadernetaCreate, CadernetaResponse, CadernetaUpdate
 
@@ -51,6 +51,31 @@ async def create_caderneta(
     await db.commit()
     await db.refresh(caderneta)
     return caderneta
+
+
+@router.get("/my", response_model=list[CadernetaResponse])
+async def get_my_cadernetas(
+    skip: int = 0,
+    limit: int = 50,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_teacher),
+):
+    employee_id = getattr(current_user, "employee_id", None)
+    if employee_id is None:
+        raise HTTPException(status_code=400, detail="Current user has no associated employee record")
+
+    result = await db.execute(
+        select(Caderneta)
+        .where(
+            Caderneta.school_id == school_id,
+            Caderneta.teacher_id == employee_id,
+        )
+        .order_by(Caderneta.report_date.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    return result.scalars().all()
 
 
 @router.get("/{caderneta_id}", response_model=CadernetaResponse)

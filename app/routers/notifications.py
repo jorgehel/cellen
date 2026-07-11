@@ -37,7 +37,7 @@ class UnreadCountResponse(BaseModel):
 
 # ─── Endpoints ────────────────────────────────────────────────────────────────
 
-@router.get("/", response_model=List[NotificationResponse])
+@router.get("", response_model=List[NotificationResponse])
 async def list_notifications(
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),

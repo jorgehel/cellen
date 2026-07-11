@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_school_id, require_school_admin, require_teacher, get_current_user
+from app.core.dependencies import get_school_id, require_school_admin, require_teacher, get_current_user, require_parent
 from app.models.academic import Enrollment, Schedule
 from app.models.caderneta import Caderneta
 from app.models.finance import Invoice, PaymentInvoice
@@ -60,6 +60,44 @@ async def create_child(
     await db.commit()
     await db.refresh(child)
     return child
+
+
+@router.get("/my", response_model=list[ChildResponse])
+async def get_my_children(
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    role = getattr(current_user, "_role", "")
+
+    if role == "parent":
+        guardian_id = getattr(current_user, "guardian_id", None)
+        if guardian_id is None:
+            return []
+        result = await db.execute(
+            select(Child)
+            .join(ChildGuardian, ChildGuardian.child_id == Child.id)
+            .where(
+                ChildGuardian.guardian_id == guardian_id,
+                Child.school_id == school_id,
+                Child.is_active == True,
+            )
+        )
+        return result.scalars().all()
+
+    elif role == "teacher":
+        result = await db.execute(
+            select(Child).where(Child.school_id == school_id, Child.is_active == True)
+        )
+        return result.scalars().all()
+
+    elif role in ("school_admin", "platform_admin"):
+        result = await db.execute(
+            select(Child).where(Child.school_id == school_id, Child.is_active == True)
+        )
+        return result.scalars().all()
+
+    raise HTTPException(status_code=403, detail="Access denied")
 
 
 @router.get("/{child_id}", response_model=ChildResponse)

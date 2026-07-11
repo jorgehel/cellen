@@ -51,8 +51,8 @@ class _PlatformShellState extends ConsumerState<PlatformShell> {
   static const _routes = ['/platform', '/platform/schools'];
 
   static const _destinations = [
-    (icon: Icons.dashboard, label: 'Dashboard'),
-    (icon: Icons.school, label: 'Escolas'),
+    (icon: Icons.dashboard_outlined, selectedIcon: Icons.dashboard, label: 'Dashboard'),
+    (icon: Icons.school_outlined, selectedIcon: Icons.school, label: 'Escolas'),
   ];
 
   void _onDestinationSelected(int index) {
@@ -106,6 +106,7 @@ class _PlatformShellState extends ConsumerState<PlatformShell> {
               destinations: _destinations
                   .map((d) => NavigationRailDestination(
                         icon: Icon(d.icon),
+                        selectedIcon: Icon(d.selectedIcon),
                         label: Text(d.label),
                       ))
                   .toList(),
@@ -124,6 +125,7 @@ class _PlatformShellState extends ConsumerState<PlatformShell> {
           destinations: _destinations
               .map((d) => NavigationDestination(
                     icon: Icon(d.icon),
+                    selectedIcon: Icon(d.selectedIcon),
                     label: d.label,
                   ))
               .toList(),
@@ -156,14 +158,14 @@ class _AdminShellState extends ConsumerState<AdminShell> {
   ];
 
   static const _destinations = [
-    (icon: Icons.dashboard, label: 'Dashboard'),
-    (icon: Icons.how_to_reg, label: 'Presenças'),
-    (icon: Icons.chat_bubble_outline, label: 'Mensagens'),
-    (icon: Icons.child_care, label: 'Crianças'),
-    (icon: Icons.people, label: 'Funcionários'),
-    (icon: Icons.account_balance_wallet, label: 'Finanças'),
-    (icon: Icons.school, label: 'Turmas'),
-    (icon: Icons.event_busy, label: 'Ausências'),
+    (icon: Icons.dashboard_outlined, selectedIcon: Icons.dashboard, label: 'Dashboard'),
+    (icon: Icons.how_to_reg, selectedIcon: Icons.how_to_reg, label: 'Presenças'),
+    (icon: Icons.chat_bubble_outline, selectedIcon: Icons.chat_bubble, label: 'Mensagens'),
+    (icon: Icons.child_care, selectedIcon: Icons.child_care, label: 'Crianças'),
+    (icon: Icons.people_outline, selectedIcon: Icons.people, label: 'Funcionários'),
+    (icon: Icons.account_balance_wallet, selectedIcon: Icons.account_balance_wallet, label: 'Finanças'),
+    (icon: Icons.school_outlined, selectedIcon: Icons.school, label: 'Turmas'),
+    (icon: Icons.event_busy, selectedIcon: Icons.event_busy, label: 'Ausências'),
   ];
 
   void _onDestinationSelected(int index) {
@@ -179,9 +181,9 @@ class _AdminShellState extends ConsumerState<AdminShell> {
     // Bottom nav shows only the first 3 items; rest accessible via nav rail
     const bottomNavCount = 3;
     const bottomNavDestinations = [
-      (icon: Icons.dashboard, label: 'Dashboard'),
-      (icon: Icons.how_to_reg, label: 'Presenças'),
-      (icon: Icons.chat_bubble_outline, label: 'Mensagens'),
+      (icon: Icons.dashboard_outlined, selectedIcon: Icons.dashboard, label: 'Dashboard'),
+      (icon: Icons.how_to_reg, selectedIcon: Icons.how_to_reg, label: 'Presenças'),
+      (icon: Icons.chat_bubble_outline, selectedIcon: Icons.chat_bubble, label: 'Mensagens'),
     ];
 
     if (isWide) {
@@ -226,6 +228,7 @@ class _AdminShellState extends ConsumerState<AdminShell> {
                   .map(
                     (d) => NavigationRailDestination(
                       icon: Icon(d.icon),
+                      selectedIcon: Icon(d.selectedIcon),
                       label: Text(d.label),
                     ),
                   )
@@ -252,11 +255,13 @@ class _AdminShellState extends ConsumerState<AdminShell> {
             ...bottomNavDestinations.map(
               (d) => NavigationDestination(
                 icon: Icon(d.icon),
+                selectedIcon: Icon(d.selectedIcon),
                 label: d.label,
               ),
             ),
             const NavigationDestination(
-              icon: Icon(Icons.more_horiz),
+              icon: Icon(Icons.more_horiz_outlined),
+              selectedIcon: Icon(Icons.more_horiz),
               label: 'Mais',
             ),
           ],
@@ -399,10 +404,10 @@ class _TeacherShellState extends ConsumerState<TeacherShell> {
   ];
 
   static const _destinations = [
-    (icon: Icons.dashboard, label: 'Dashboard'),
-    (icon: Icons.how_to_reg, label: 'Presenças'),
-    (icon: Icons.book, label: 'Caderneta'),
-    (icon: Icons.chat_bubble_outline, label: 'Mensagens'),
+    (icon: Icons.dashboard_outlined, selectedIcon: Icons.dashboard, label: 'Dashboard'),
+    (icon: Icons.how_to_reg, selectedIcon: Icons.how_to_reg, label: 'Presenças'),
+    (icon: Icons.book_outlined, selectedIcon: Icons.book, label: 'Caderneta'),
+    (icon: Icons.chat_bubble_outline, selectedIcon: Icons.chat_bubble, label: 'Mensagens'),
   ];
 
   void _onDestinationSelected(int index) {
@@ -457,6 +462,7 @@ class _TeacherShellState extends ConsumerState<TeacherShell> {
                   .map(
                     (d) => NavigationRailDestination(
                       icon: Icon(d.icon),
+                      selectedIcon: Icon(d.selectedIcon),
                       label: Text(d.label),
                     ),
                   )
@@ -477,6 +483,7 @@ class _TeacherShellState extends ConsumerState<TeacherShell> {
               .map(
                 (d) => NavigationDestination(
                   icon: Icon(d.icon),
+                  selectedIcon: Icon(d.selectedIcon),
                   label: d.label,
                 ),
               )
@@ -509,11 +516,11 @@ class _ParentShellState extends ConsumerState<ParentShell> {
   ];
 
   static const _destinations = [
-    (icon: Icons.home, label: 'Início'),
-    (icon: Icons.chat_bubble_outline, label: 'Mensagens'),
-    (icon: Icons.photo_library, label: 'Galeria'),
-    (icon: Icons.assignment, label: 'Caderneta'),
-    (icon: Icons.restaurant_menu, label: 'Ementa'),
+    (icon: Icons.home_outlined, selectedIcon: Icons.home, label: 'Início'),
+    (icon: Icons.chat_bubble_outline, selectedIcon: Icons.chat_bubble, label: 'Mensagens'),
+    (icon: Icons.photo_library_outlined, selectedIcon: Icons.photo_library, label: 'Galeria'),
+    (icon: Icons.book_outlined, selectedIcon: Icons.book, label: 'Caderneta'),
+    (icon: Icons.restaurant_menu, selectedIcon: Icons.restaurant_menu, label: 'Ementa'),
   ];
 
   void _onDestinationSelected(int index) {
@@ -568,6 +575,7 @@ class _ParentShellState extends ConsumerState<ParentShell> {
                   .map(
                     (d) => NavigationRailDestination(
                       icon: Icon(d.icon),
+                      selectedIcon: Icon(d.selectedIcon),
                       label: Text(d.label),
                     ),
                   )
@@ -588,6 +596,7 @@ class _ParentShellState extends ConsumerState<ParentShell> {
               .map(
                 (d) => NavigationDestination(
                   icon: Icon(d.icon),
+                  selectedIcon: Icon(d.selectedIcon),
                   label: d.label,
                 ),
               )

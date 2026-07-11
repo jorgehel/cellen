@@ -53,7 +53,7 @@ class IncidentResponse(BaseModel):
 
 # ─── Endpoints ────────────────────────────────────────────────────────────────
 
-@router.get("/", response_model=List[IncidentResponse])
+@router.get("", response_model=List[IncidentResponse])
 async def list_incidents(
     child_id: Optional[uuid.UUID] = None,
     skip: int = 0,

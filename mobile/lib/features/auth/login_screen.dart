@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/auth/auth_provider.dart';
 import '../../core/auth/auth_state.dart';
+import '../../core/theme/app_theme.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -43,7 +44,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Widget build(BuildContext context) {
     ref.listen<AuthState>(authProvider, (_, next) {
       if (next.isAuthenticated) {
-        // Router redirect guard handles the correct destination
         final dest = switch (next.role) {
           UserRole.platformAdmin || UserRole.schoolAdmin => '/admin',
           UserRole.teacher || UserRole.staff => '/teacher',
@@ -55,61 +55,103 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
 
     final authState = ref.watch(authProvider);
+    final size = MediaQuery.of(context).size;
 
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 400),
-            child: Card(
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(32),
+      body: Stack(
+        children: [
+          // Gradient top section (40% height)
+          Container(
+            height: size.height * 0.42,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF4F46E5), Color(0xFF3B82F6)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+          ),
+
+          // White card bottom section with rounded top
+          Positioned(
+            top: size.height * 0.30,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(28),
+                  topRight: Radius.circular(28),
+                ),
+              ),
+            ),
+          ),
+
+          // Logo + Name (centered in gradient area)
+          Positioned(
+            top: size.height * 0.06,
+            left: 0,
+            right: 0,
+            child: Column(
+              children: [
+                Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Icon(
+                    Icons.school_rounded,
+                    color: Colors.white,
+                    size: 40,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Cellen',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 32,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Gestão de Creche',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.8),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Form content scrollable
+          Positioned(
+            top: size.height * 0.33,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
                 child: Form(
                   key: _formKey,
                   child: Column(
-                    mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // Logo / Title
-                      Icon(
-                        Icons.child_friendly,
-                        size: 56,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Cellen',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context)
-                            .textTheme
-                            .headlineMedium
-                            ?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Gestão de Creche',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                            ),
-                      ),
-                      const SizedBox(height: 32),
-
                       // Mode toggle
                       Container(
                         decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(8),
+                          color: const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                         padding: const EdgeInsets.all(4),
                         child: Row(
@@ -118,27 +160,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               child: GestureDetector(
                                 onTap: () =>
                                     setState(() => _isPlatformLogin = false),
-                                child: Container(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 8),
+                                child: AnimatedContainer(
+                                  duration:
+                                      const Duration(milliseconds: 180),
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 10),
                                   decoration: BoxDecoration(
                                     color: !_isPlatformLogin
-                                        ? Theme.of(context).colorScheme.primary
+                                        ? AppTheme.primary
                                         : Colors.transparent,
-                                    borderRadius: BorderRadius.circular(6),
+                                    borderRadius: BorderRadius.circular(9),
                                   ),
                                   child: Text(
                                     'Escola',
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
                                       color: !_isPlatformLogin
-                                          ? Theme.of(context)
-                                              .colorScheme
-                                              .onPrimary
-                                          : Theme.of(context)
-                                              .colorScheme
-                                              .onSurfaceVariant,
+                                          ? Colors.white
+                                          : Colors.grey.shade600,
                                       fontWeight: FontWeight.w600,
+                                      fontSize: 14,
                                     ),
                                   ),
                                 ),
@@ -148,27 +189,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               child: GestureDetector(
                                 onTap: () =>
                                     setState(() => _isPlatformLogin = true),
-                                child: Container(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 8),
+                                child: AnimatedContainer(
+                                  duration:
+                                      const Duration(milliseconds: 180),
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 10),
                                   decoration: BoxDecoration(
                                     color: _isPlatformLogin
-                                        ? Theme.of(context).colorScheme.primary
+                                        ? AppTheme.primary
                                         : Colors.transparent,
-                                    borderRadius: BorderRadius.circular(6),
+                                    borderRadius: BorderRadius.circular(9),
                                   ),
                                   child: Text(
                                     'Plataforma',
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
                                       color: _isPlatformLogin
-                                          ? Theme.of(context)
-                                              .colorScheme
-                                              .onPrimary
-                                          : Theme.of(context)
-                                              .colorScheme
-                                              .onSurfaceVariant,
+                                          ? Colors.white
+                                          : Colors.grey.shade600,
                                       fontWeight: FontWeight.w600,
+                                      fontSize: 14,
                                     ),
                                   ),
                                 ),
@@ -184,10 +224,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         TextFormField(
                           controller: _schoolSlugController,
                           textInputAction: TextInputAction.next,
-                          decoration: const InputDecoration(
-                            labelText: 'Identificador da Escola',
-                            prefixIcon: Icon(Icons.business),
-                            hintText: 'ex: creche-abc',
+                          decoration: InputDecoration(
+                            labelText: 'Código da Escola',
+                            hintText: 'código da escola',
+                            prefixIcon: const Icon(Icons.business_outlined),
+                            helperText:
+                                'Deixar em branco para acesso à plataforma',
+                            helperStyle: TextStyle(
+                                color: Colors.grey.shade500, fontSize: 11),
                           ),
                           validator: (v) => !_isPlatformLogin &&
                                   (v == null || v.trim().isEmpty)
@@ -202,10 +246,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         textInputAction: TextInputAction.next,
                         decoration: const InputDecoration(
                           labelText: 'Utilizador',
-                          prefixIcon: Icon(Icons.person),
+                          prefixIcon: Icon(Icons.person_outline),
                         ),
                         validator: (v) =>
-                            v == null || v.trim().isEmpty ? 'Campo obrigatório' : null,
+                            v == null || v.trim().isEmpty
+                                ? 'Campo obrigatório'
+                                : null,
                       ),
                       const SizedBox(height: 16),
 
@@ -216,11 +262,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         onFieldSubmitted: (_) => _submit(),
                         decoration: InputDecoration(
                           labelText: 'Palavra-passe',
-                          prefixIcon: const Icon(Icons.lock),
+                          prefixIcon: const Icon(Icons.lock_outline),
                           suffixIcon: IconButton(
-                            icon: Icon(_obscurePassword
-                                ? Icons.visibility
-                                : Icons.visibility_off),
+                            icon: Icon(
+                              _obscurePassword
+                                  ? Icons.visibility_outlined
+                                  : Icons.visibility_off_outlined,
+                            ),
                             onPressed: () => setState(
                                 () => _obscurePassword = !_obscurePassword),
                           ),
@@ -229,33 +277,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             v == null || v.isEmpty ? 'Campo obrigatório' : null,
                       ),
 
-                      // Error message
+                      // Error
                       if (authState.error != null) ...[
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 14),
                         Container(
-                          padding: const EdgeInsets.all(12),
+                          padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .errorContainer,
-                            borderRadius: BorderRadius.circular(8),
+                            color: AppTheme.danger.withOpacity(0.07),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                                color: AppTheme.danger.withOpacity(0.3)),
                           ),
                           child: Row(
                             children: [
-                              Icon(
-                                Icons.error_outline,
-                                color:
-                                    Theme.of(context).colorScheme.onErrorContainer,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
+                              Icon(Icons.error_outline,
+                                  color: AppTheme.danger, size: 18),
+                              const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
                                   authState.error!,
                                   style: TextStyle(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onErrorContainer,
+                                    color: AppTheme.danger,
                                     fontSize: 13,
                                   ),
                                 ),
@@ -267,18 +309,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                       const SizedBox(height: 24),
 
-                      FilledButton(
-                        onPressed: authState.isLoading ? null : _submit,
-                        child: authState.isLoading
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
+                      SizedBox(
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: authState.isLoading ? null : _submit,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primary,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: authState.isLoading
+                              ? const SizedBox(
+                                  height: 22,
+                                  width: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Text(
+                                  'Entrar',
+                                  style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700),
                                 ),
-                              )
-                            : const Text('Entrar'),
+                        ),
                       ),
                     ],
                   ),
@@ -286,7 +344,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }

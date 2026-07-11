@@ -5,7 +5,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -625,3 +625,154 @@ async def bulk_generate_invoices(
     await db.commit()
     total = created_count + skipped_count
     return BulkGenerateResponse(created=created_count, skipped=skipped_count, total=total)
+
+
+# ─── Dashboard / Summary ──────────────────────────────────────────────────────
+
+@router.get("/dashboard")
+async def finance_dashboard(
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_school_admin),
+):
+    today = date.today()
+    month_start = date(today.year, today.month, 1)
+
+    # Total revenue this month (paid invoices)
+    revenue_result = await db.execute(
+        select(func.coalesce(func.sum(Invoice.total_amount), 0))
+        .where(
+            Invoice.school_id == school_id,
+            Invoice.status == "paid",
+            Invoice.invoice_date >= month_start,
+        )
+    )
+    total_revenue_month = float(revenue_result.scalar())
+
+    # Total expenses this month
+    expenses_result = await db.execute(
+        select(func.coalesce(func.sum(Expense.amount), 0))
+        .where(
+            Expense.school_id == school_id,
+            Expense.expense_date >= month_start,
+        )
+    )
+    total_expenses_month = float(expenses_result.scalar())
+
+    # Pending invoices count
+    pending_result = await db.execute(
+        select(func.count(Invoice.id))
+        .where(Invoice.school_id == school_id, Invoice.status == "pending")
+    )
+    pending_invoices_count = pending_result.scalar()
+
+    # Overdue invoices count
+    overdue_result = await db.execute(
+        select(func.count(Invoice.id))
+        .where(Invoice.school_id == school_id, Invoice.status == "overdue")
+    )
+    overdue_invoices_count = overdue_result.scalar()
+
+    # Total outstanding (pending + overdue invoices total_amount)
+    outstanding_result = await db.execute(
+        select(func.coalesce(func.sum(Invoice.total_amount), 0))
+        .where(
+            Invoice.school_id == school_id,
+            Invoice.status.in_(["pending", "overdue", "partially_paid"]),
+        )
+    )
+    total_outstanding = float(outstanding_result.scalar())
+
+    return {
+        "total_revenue_month": total_revenue_month,
+        "total_expenses_month": total_expenses_month,
+        "pending_invoices_count": pending_invoices_count,
+        "overdue_invoices_count": overdue_invoices_count,
+        "total_outstanding": total_outstanding,
+    }
+
+
+@router.get("/summary")
+async def finance_summary(
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_school_admin),
+):
+    today = date.today()
+    month_start = date(today.year, today.month, 1)
+
+    # Total revenue this month (paid invoices)
+    revenue_result = await db.execute(
+        select(func.coalesce(func.sum(Invoice.total_amount), 0))
+        .where(
+            Invoice.school_id == school_id,
+            Invoice.status == "paid",
+            Invoice.invoice_date >= month_start,
+        )
+    )
+    total_revenue_month = float(revenue_result.scalar())
+
+    # Total expenses this month
+    expenses_result = await db.execute(
+        select(func.coalesce(func.sum(Expense.amount), 0))
+        .where(
+            Expense.school_id == school_id,
+            Expense.expense_date >= month_start,
+        )
+    )
+    total_expenses_month = float(expenses_result.scalar())
+
+    # Pending invoices count
+    pending_result = await db.execute(
+        select(func.count(Invoice.id))
+        .where(Invoice.school_id == school_id, Invoice.status == "pending")
+    )
+    pending_invoices_count = pending_result.scalar()
+
+    # Overdue invoices count
+    overdue_result = await db.execute(
+        select(func.count(Invoice.id))
+        .where(Invoice.school_id == school_id, Invoice.status == "overdue")
+    )
+    overdue_invoices_count = overdue_result.scalar()
+
+    # Total outstanding (pending + overdue + partially_paid invoices total_amount)
+    outstanding_result = await db.execute(
+        select(func.coalesce(func.sum(Invoice.total_amount), 0))
+        .where(
+            Invoice.school_id == school_id,
+            Invoice.status.in_(["pending", "overdue", "partially_paid"]),
+        )
+    )
+    total_outstanding = float(outstanding_result.scalar())
+
+    # Paid invoices count this month
+    paid_result = await db.execute(
+        select(func.count(Invoice.id))
+        .where(
+            Invoice.school_id == school_id,
+            Invoice.status == "paid",
+            Invoice.invoice_date >= month_start,
+        )
+    )
+    paid_invoices_count = paid_result.scalar()
+
+    # Total children invoiced this month (distinct child_ids)
+    children_invoiced_result = await db.execute(
+        select(func.count(func.distinct(Invoice.child_id)))
+        .where(
+            Invoice.school_id == school_id,
+            Invoice.invoice_date >= month_start,
+        )
+    )
+    total_children_invoiced = children_invoiced_result.scalar()
+
+    return {
+        "total_revenue_month": total_revenue_month,
+        "total_expenses_month": total_expenses_month,
+        "pending_invoices_count": pending_invoices_count,
+        "overdue_invoices_count": overdue_invoices_count,
+        "total_outstanding": total_outstanding,
+        "paid_invoices_count": paid_invoices_count,
+        "total_children_invoiced": total_children_invoiced,
+    }
