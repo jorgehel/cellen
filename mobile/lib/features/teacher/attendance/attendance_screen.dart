@@ -233,9 +233,26 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
   Future<void> _markAllPresent() async {
     setState(() => _isBulkLoading = true);
     try {
+      final summary = ref.read(attendanceTodayProvider).value;
+      final today = DateTime.now();
+      final dateStr =
+          '${today.year.toString().padLeft(4, '0')}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+      final records = (summary?.records ?? [])
+          .where((r) => r.status != 'present' && r.status != 'late')
+          .map((r) => {'child_id': r.childId, 'status': 'present'})
+          .toList();
+      if (records.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Todas as crianças já marcadas')),
+          );
+        }
+        setState(() => _isBulkLoading = false);
+        return;
+      }
       await ref
           .read(apiClientProvider)
-          .post('/attendance/bulk', data: {'status': 'present'});
+          .post('/attendance/bulk', data: {'date': dateStr, 'records': records});
       ref.invalidate(attendanceTodayProvider);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

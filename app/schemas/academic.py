@@ -154,3 +154,6 @@ class EnrollmentResponse(EnrollmentBase):
     id: uuid.UUID
     school_id: uuid.UUID
     created_at: datetime
+    child_name: Optional[str] = None
+    turma_name: Optional[str] = None
+    school_year: Optional[str] = None

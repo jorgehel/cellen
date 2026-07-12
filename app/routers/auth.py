@@ -53,11 +53,13 @@ async def refresh_token(body: RefreshRequest):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token type",
         )
-    # Build new access token with same claims
+    # Build new access token preserving all original claims
     token_data = {
         "sub": payload["sub"],
         "role": payload["role"],
         "school_id": payload.get("school_id"),
+        "employee_id": payload.get("employee_id"),
+        "guardian_id": payload.get("guardian_id"),
     }
     access_token = create_access_token(token_data)
     return {"access_token": access_token, "token_type": "bearer"}

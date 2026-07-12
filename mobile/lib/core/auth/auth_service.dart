@@ -103,7 +103,7 @@ class AuthService {
     try {
       final refreshToken = await _storage.read(key: _refreshTokenKey);
       if (refreshToken != null) {
-        await _api.post('/auth/logout', data: {'refresh': refreshToken});
+        await _api.post('/auth/logout', data: {'refresh_token': refreshToken});
       }
     } catch (_) {
       // Ignore logout API errors — always clear local tokens
@@ -164,7 +164,7 @@ class AuthService {
     }
 
     try {
-      final data = await _api.post('/auth/refresh', data: {'refresh': refreshToken});
+      final data = await _api.post('/auth/refresh', data: {'refresh_token': refreshToken});
       final newAccess = data['access_token'] as String?;
       if (newAccess == null || newAccess.isEmpty) {
         await _clearAll();

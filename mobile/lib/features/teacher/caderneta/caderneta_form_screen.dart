@@ -128,7 +128,7 @@ class _CadernetaFormScreenState
     final auth = ref.read(authProvider);
     final body = <String, dynamic>{
       'child_id': _selectedChildId,
-      'teacher_id': auth.userId,
+      'teacher_id': auth.employeeId ?? auth.userId,
       'report_date':
           '${_reportDate.year.toString().padLeft(4, '0')}-${_reportDate.month.toString().padLeft(2, '0')}-${_reportDate.day.toString().padLeft(2, '0')}',
       'had_nap': _hadNap,

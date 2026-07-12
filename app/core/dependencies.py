@@ -87,7 +87,7 @@ async def require_school_admin(user=Depends(get_current_user)):
 
 async def require_teacher(user=Depends(get_current_user)):
     role = getattr(user, "_role", None)
-    if role not in ("teacher", "school_admin", "platform_admin"):
+    if role not in ("teacher", "staff", "school_admin", "platform_admin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Teacher access required",

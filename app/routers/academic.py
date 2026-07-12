@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import get_school_id, require_school_admin, require_teacher
 from app.models.academic import (
-    Activity, Enrollment, Schedule, ScheduleSlot, ScheduleTeacher, Turma
+    Activity, Enrollment, Schedule, ScheduleSlot, ScheduleTeacher, SchoolYear, Turma
 )
 from app.schemas.academic import (
     ActivityCreate, ActivityResponse, ActivityUpdate,
@@ -412,7 +412,50 @@ async def list_enrollments(
             Schedule.turma_id == turma_id
         )
     result = await db.execute(query.offset(skip).limit(limit))
-    return result.scalars().all()
+    enrollments = result.scalars().all()
+
+    if not enrollments:
+        return []
+
+    # Enrich: child names, turma names, school year labels
+    from app.models.person import Child
+    child_ids = list({e.child_id for e in enrollments})
+    schedule_ids = list({e.schedule_id for e in enrollments})
+
+    child_res = await db.execute(
+        select(Child.id, Child.first_name, Child.last_name).where(Child.id.in_(child_ids))
+    )
+    child_map = {row[0]: f"{row[1]} {row[2]}" for row in child_res.all()}
+
+    sched_res = await db.execute(
+        select(Schedule.id, Schedule.turma_id, Schedule.school_year_id)
+        .where(Schedule.id.in_(schedule_ids))
+    )
+    sched_rows = sched_res.all()
+    sched_turma = {row[0]: row[1] for row in sched_rows}
+    sched_year = {row[0]: row[2] for row in sched_rows}
+
+    turma_ids = list({v for v in sched_turma.values() if v})
+    year_ids = list({v for v in sched_year.values() if v})
+
+    turma_res = await db.execute(select(Turma.id, Turma.name).where(Turma.id.in_(turma_ids)))
+    turma_map = {row[0]: row[1] for row in turma_res.all()}
+
+    year_res = await db.execute(
+        select(SchoolYear.id, SchoolYear.year_label).where(SchoolYear.id.in_(year_ids))
+    )
+    year_map = {row[0]: row[1] for row in year_res.all()}
+
+    output = []
+    for e in enrollments:
+        data = EnrollmentResponse.model_validate(e)
+        data.child_name = child_map.get(e.child_id)
+        turma_id = sched_turma.get(e.schedule_id)
+        data.turma_name = turma_map.get(turma_id) if turma_id else None
+        year_id = sched_year.get(e.schedule_id)
+        data.school_year = year_map.get(year_id) if year_id else None
+        output.append(data)
+    return output
 
 
 @router.post("/enrollments", response_model=EnrollmentResponse, status_code=status.HTTP_201_CREATED)

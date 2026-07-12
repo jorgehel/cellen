@@ -201,7 +201,7 @@ class ExpensesScreen extends ConsumerWidget {
                             horizontal: 12, vertical: 2),
                         child: ListTile(
                           leading: _CategoryIcon(
-                              category: exp.category),
+                              category: exp.categoryName ?? exp.categoryId),
                           title: Text(exp.description),
                           subtitle: Text(exp.categoryLabel),
                           trailing: Text(

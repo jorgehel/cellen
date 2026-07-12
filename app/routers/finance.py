@@ -345,8 +345,9 @@ async def bulk_create_invoices(
 
         ft_number = await get_next_series_number(db, school_id, "FT", today.year)
         ft_doc_number = generate_document_number("FT", today.year, ft_number)
-        ft_hash = compute_hash(ft_doc_number, today, nif_emitter, "Consumidor Final", float(total_amount), last_hash)
-        last_hash = ft_hash  # chain to next invoice
+        prev_hash = last_hash  # capture before advancing the chain
+        ft_hash = compute_hash(ft_doc_number, today, nif_emitter, "Consumidor Final", float(total_amount), prev_hash)
+        last_hash = ft_hash  # advance chain for next invoice
 
         invoice = Invoice(
             school_id=school_id,
@@ -363,7 +364,7 @@ async def bulk_create_invoices(
             series_year=today.year,
             full_document_number=ft_doc_number,
             hash_code=ft_hash,
-            previous_hash=last_hash,
+            previous_hash=prev_hash,
         )
         db.add(invoice)
         invoices.append(invoice)

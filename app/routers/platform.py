@@ -79,6 +79,7 @@ async def create_school(
         country=body.country,
         phone=body.phone,
         email=body.email,
+        nif=body.nif,
         logo_url=body.logo_url,
         subscription_notes=body.subscription_notes,
         is_active=True,
