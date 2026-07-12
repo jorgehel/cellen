@@ -4,8 +4,9 @@ import 'package:intl/intl.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/auth/auth_provider.dart';
-import '../../../core/models/invoice.dart';
 import '../../../core/models/child.dart';
+import '../../../core/models/invoice.dart';
+import '../../../core/providers/currency_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Providers
@@ -45,7 +46,7 @@ class _InvoicesScreenState extends ConsumerState<InvoicesScreen> {
   @override
   Widget build(BuildContext context) {
     final invoicesAsync = ref.watch(invoicesProvider);
-    final currency = NumberFormat.currency(locale: 'pt_PT', symbol: '€');
+    final currency = ref.watch(currencyFormatProvider);
 
     return Scaffold(
       appBar: AppBar(

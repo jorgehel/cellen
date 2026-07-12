@@ -572,7 +572,7 @@ class _CreateAppointmentDialogState
                   data: (employees) => DropdownButtonFormField<String>(
                     value: _selectedEmployeeId,
                     decoration: const InputDecoration(
-                        labelText: 'Funcionário'),
+                        labelText: 'Funcionário *'),
                     isExpanded: true,
                     items: employees
                         .map((e) => DropdownMenuItem(
@@ -581,6 +581,8 @@ class _CreateAppointmentDialogState
                         .toList(),
                     onChanged: (v) =>
                         setState(() => _selectedEmployeeId = v),
+                    validator: (v) =>
+                        v == null ? 'Seleccione um funcionário' : null,
                   ),
                 ),
                 const SizedBox(height: 12),

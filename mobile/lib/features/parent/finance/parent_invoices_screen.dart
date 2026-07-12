@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/api/api_client.dart';
+import '../../../core/providers/currency_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Data model
@@ -119,7 +120,7 @@ class _ParentInvoicesScreenState extends ConsumerState<ParentInvoicesScreen> {
   @override
   Widget build(BuildContext context) {
     final invoicesAsync = ref.watch(parentInvoicesProvider);
-    final currency = NumberFormat.currency(locale: 'pt_AO', symbol: 'Kz');
+    final currency = ref.watch(currencyFormatProvider);
 
     return Scaffold(
       appBar: AppBar(

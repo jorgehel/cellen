@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/providers/currency_provider.dart';
 import '../../core/theme/app_theme.dart';
 
 // ---------------------------------------------------------------------------
@@ -60,7 +61,7 @@ class ReceiptsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final receiptsAsync = ref.watch(receiptsProvider);
-    final currency = NumberFormat.currency(locale: 'pt_PT', symbol: 'Kz');
+    final currency = ref.watch(currencyFormatProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -196,8 +197,7 @@ class _PaymentEntry {
         paymentMethod: json['payment_method'] as String?,
       );
 
-  String get label {
-    final currency = NumberFormat.currency(locale: 'pt_PT', symbol: 'Kz');
+  String label(NumberFormat currency) {
     final dateStr = paymentDate.isNotEmpty
         ? (() {
             try {
@@ -308,7 +308,8 @@ class _CreateReceiptDialogState extends ConsumerState<_CreateReceiptDialog> {
                   items: _payments
                       .map((p) => DropdownMenuItem(
                             value: p.id,
-                            child: Text(p.label,
+                            child: Text(
+                                p.label(ref.watch(currencyFormatProvider)),
                                 overflow: TextOverflow.ellipsis),
                           ))
                       .toList(),

@@ -68,10 +68,13 @@ async def list_appointments(
 
     if role in ("school_admin", "platform_admin"):
         pass  # see all
-    elif role == "teacher":
+    elif role in ("teacher", "staff"):
         employee_id = getattr(current_user, "employee_id", None)
         if employee_id:
             query = query.where(Appointment.employee_id == employee_id)
+        else:
+            # employee not linked — return nothing rather than exposing all
+            query = query.where(False)
     else:
         # parent — sees own appointments
         query = query.where(Appointment.requested_by == current_user.id)

@@ -15,6 +15,7 @@ class SchoolBase(BaseModel):
     email: Optional[str] = None
     nif: Optional[str] = None
     logo_url: Optional[str] = None
+    currency: str = "AOA"
     subscription_notes: Optional[str] = None
 
 
@@ -32,6 +33,7 @@ class SchoolUpdate(BaseModel):
     email: Optional[str] = None
     nif: Optional[str] = None
     logo_url: Optional[str] = None
+    currency: Optional[str] = None
     subscription_notes: Optional[str] = None
     subscription_started_at: Optional[datetime] = None
 

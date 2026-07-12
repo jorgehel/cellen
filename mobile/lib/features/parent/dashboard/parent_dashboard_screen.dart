@@ -6,9 +6,10 @@ import 'package:intl/intl.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/auth/auth_provider.dart';
-import '../../../core/models/child.dart';
 import '../../../core/models/caderneta.dart';
+import '../../../core/models/child.dart';
 import '../../../core/models/invoice.dart';
+import '../../../core/providers/currency_provider.dart';
 import '../../../core/theme/app_theme.dart';
 
 // ---------------------------------------------------------------------------
@@ -78,7 +79,7 @@ class _ParentDashboardScreenState
     final cadernetasAsync = ref.watch(parentRecentCadernetsProvider);
     final invoicesAsync = ref.watch(parentOutstandingInvoicesProvider);
     final unreadAsync = ref.watch(parentUnreadMessagesProvider);
-    final currency = NumberFormat.currency(locale: 'pt_PT', symbol: '€');
+    final currency = ref.watch(currencyFormatProvider);
     final now = DateTime.now();
     final isWide = MediaQuery.of(context).size.width >= 900;
 

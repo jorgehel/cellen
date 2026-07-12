@@ -6,7 +6,7 @@ from fastapi import HTTPException, UploadFile
 
 from app.core.config import settings
 
-ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "application/pdf"}
+ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 
@@ -38,7 +38,7 @@ async def save_upload(file: UploadFile, entity_type: str, entity_id: uuid.UUID) 
     ext = Path(original_name).suffix.lower()
     if not ext:
         # Derive extension from content type
-        ext_map = {"image/jpeg": ".jpg", "image/png": ".png", "application/pdf": ".pdf"}
+        ext_map = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "application/pdf": ".pdf"}
         ext = ext_map.get(file.content_type, "")
     safe_name = f"{uuid.uuid4()}{ext}"
     dest_path = dest_dir / safe_name

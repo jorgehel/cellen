@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/auth/auth_provider.dart';
+import '../../../core/providers/currency_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Data models
@@ -88,7 +89,7 @@ class ExpensesScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final expensesAsync = ref.watch(expensesProvider);
-    final currency = NumberFormat.currency(locale: 'pt_PT', symbol: '€');
+    final currency = ref.watch(currencyFormatProvider);
 
     return Scaffold(
       appBar: AppBar(

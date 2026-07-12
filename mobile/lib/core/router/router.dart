@@ -49,10 +49,12 @@ import '../../features/health/immunizations_screen.dart';
 import '../../features/admin/guardians/guardians_list_screen.dart';
 import '../../features/admin/guardians/guardian_form_screen.dart';
 import '../../features/admin/school_settings_screen.dart';
+import '../../features/admin/school_profile_screen.dart';
 import '../../features/trip_authorizations/trip_authorizations_screen.dart';
 import '../../features/pickup/pickup_authorizations_screen.dart';
 import '../../features/pickup/meal_orders_screen.dart';
 import '../../core/api/api_client.dart';
+import '../../core/providers/currency_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Change Password Dialog
@@ -314,11 +316,15 @@ class AdminShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentPath = GoRouterState.of(context).uri.path;
+    final school = ref.watch(schoolInfoProvider).valueOrNull;
     return SidebarLayout(
       child: child,
       items: _adminItems,
       currentPath: currentPath,
       title: _titleForPath(currentPath, _adminItems),
+      schoolName: school?.name,
+      schoolLogoUrl: school?.logoUrl,
+      onSchoolTap: () => context.go('/admin/school-profile'),
       actions: [
         IconButton(
           icon: const Icon(Icons.lock_outline),
@@ -345,11 +351,14 @@ class TeacherShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentPath = GoRouterState.of(context).uri.path;
+    final school = ref.watch(schoolInfoProvider).valueOrNull;
     return SidebarLayout(
       child: child,
       items: _teacherItems,
       currentPath: currentPath,
       title: _titleForPath(currentPath, _teacherItems),
+      schoolName: school?.name,
+      schoolLogoUrl: school?.logoUrl,
       actions: [
         IconButton(
           icon: const Icon(Icons.lock_outline),
@@ -376,11 +385,14 @@ class ParentShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentPath = GoRouterState.of(context).uri.path;
+    final school = ref.watch(schoolInfoProvider).valueOrNull;
     return SidebarLayout(
       child: child,
       items: _parentItems,
       currentPath: currentPath,
       title: _titleForPath(currentPath, _parentItems),
+      schoolName: school?.name,
+      schoolLogoUrl: school?.logoUrl,
       actions: [
         IconButton(
           icon: const Icon(Icons.lock_outline),
@@ -533,6 +545,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/admin/school-settings',
             builder: (_, __) => const SchoolSettingsScreen(),
+          ),
+          GoRoute(
+            path: '/admin/school-profile',
+            builder: (_, __) => const SchoolProfileScreen(),
           ),
           GoRoute(
             path: '/admin/finance/contracts',

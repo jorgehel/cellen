@@ -6,6 +6,7 @@ class School {
   final String? phone;
   final String? email;
   final String? logoUrl;
+  final String currency;
   final bool isActive;
 
   const School({
@@ -16,6 +17,7 @@ class School {
     this.phone,
     this.email,
     this.logoUrl,
+    this.currency = 'AOA',
     required this.isActive,
   });
 
@@ -28,6 +30,7 @@ class School {
       phone: json['phone'] as String?,
       email: json['email'] as String?,
       logoUrl: json['logo_url'] as String?,
+      currency: json['currency'] as String? ?? 'AOA',
       isActive: json['is_active'] as bool? ?? true,
     );
   }
@@ -40,6 +43,7 @@ class School {
         if (phone != null) 'phone': phone,
         if (email != null) 'email': email,
         if (logoUrl != null) 'logo_url': logoUrl,
+        'currency': currency,
         'is_active': isActive,
       };
 }

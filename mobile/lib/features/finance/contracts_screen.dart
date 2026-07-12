@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/models/child.dart';
+import '../../core/providers/currency_provider.dart';
 import '../../core/theme/app_theme.dart';
 
 // ---------------------------------------------------------------------------
@@ -88,7 +89,7 @@ class ContractsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final contractsAsync = ref.watch(contractsProvider);
-    final currency = NumberFormat.currency(locale: 'pt_PT', symbol: 'Kz');
+    final currency = ref.watch(currencyFormatProvider);
 
     return Scaffold(
       appBar: AppBar(

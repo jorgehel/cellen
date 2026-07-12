@@ -2,7 +2,7 @@ import uuid
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +24,20 @@ from app.schemas.user import UserCreate, UserResponse, UserUpdate
 router = APIRouter(prefix="/schools", tags=["Schools"])
 
 
+@router.get("/info", response_model=SchoolResponse)
+async def get_school_info(
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Basic school info (name, logo, currency) accessible to all authenticated users."""
+    result = await db.execute(select(School).where(School.id == school_id))
+    school = result.scalar_one_or_none()
+    if school is None:
+        raise HTTPException(status_code=404, detail="School not found")
+    return school
+
+
 @router.get("/me", response_model=SchoolResponse)
 async def get_my_school(
     school_id: uuid.UUID = Depends(get_school_id),
@@ -34,6 +48,34 @@ async def get_my_school(
     school = result.scalar_one_or_none()
     if school is None:
         raise HTTPException(status_code=404, detail="School not found")
+    return school
+
+
+@router.post("/logo", response_model=SchoolResponse)
+async def upload_school_logo(
+    file: UploadFile = File(...),
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_school_admin),
+):
+    from app.services.storage import delete_file, save_upload
+
+    result = await db.execute(select(School).where(School.id == school_id))
+    school = result.scalar_one_or_none()
+    if school is None:
+        raise HTTPException(status_code=404, detail="School not found")
+
+    if file.content_type not in ("image/jpeg", "image/png", "image/webp"):
+        raise HTTPException(status_code=400, detail="Apenas imagens JPEG, PNG ou WebP são permitidas")
+
+    # Remove old logo from storage if it was a local upload
+    if school.logo_url and school.logo_url.startswith("/media/"):
+        await delete_file(school.logo_url)
+
+    url = await save_upload(file, "schools", school_id)
+    school.logo_url = url
+    await db.commit()
+    await db.refresh(school)
     return school
 
 

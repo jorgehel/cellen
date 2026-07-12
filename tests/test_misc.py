@@ -297,3 +297,126 @@ async def test_list_appointments(client: AsyncClient, make_school):
     r = await client.get("/appointments", headers=auth(parent_token))
     assert r.status_code == 200
     assert isinstance(r.json(), list)
+
+
+# ---------------------------------------------------------------------------
+# Appointment role-filter tests (covers the staff-role fix)
+# ---------------------------------------------------------------------------
+
+async def _setup_appointment_scenario(client: AsyncClient, make_school, prefix: str):
+    """
+    Creates a school with:
+      - an employee (teacher) whose token is returned
+      - a staff employee whose token is returned
+      - a parent who creates one appointment targeting the teacher
+    Returns a dict with all tokens and IDs.
+    """
+    school, admin_token, slug, _ = await make_school(prefix)
+    hdrs = auth(admin_token)
+
+    # Teacher
+    teacher_username = f"tch-{uid()}"
+    emp_r = await client.post(
+        "/employees",
+        json={
+            "first_name": "Appt",
+            "last_name": "Teacher",
+            "employee_type": "teacher",
+            "username": teacher_username,
+            "password": "Teacher1!",
+        },
+        headers=hdrs,
+    )
+    assert emp_r.status_code == 201, emp_r.text
+    teacher_employee_id = emp_r.json()["id"]
+    teacher_token = await login(client, teacher_username, "Teacher1!", slug)
+
+    # Staff employee (different person, NOT the appointment target)
+    staff_username = f"stf-{uid()}"
+    staff_r = await client.post(
+        "/employees",
+        json={
+            "first_name": "Appt",
+            "last_name": "Staff",
+            "employee_type": "staff",
+            "username": staff_username,
+            "password": "Staff1234!",
+        },
+        headers=hdrs,
+    )
+    assert staff_r.status_code == 201, staff_r.text
+    staff_token = await login(client, staff_username, "Staff1234!", slug)
+
+    # Parent
+    parent_username = f"par-{uid()}"
+    grd_r = await client.post(
+        "/guardians",
+        json={
+            "first_name": "Appt",
+            "last_name": "Parent",
+            "username": parent_username,
+            "password": "Parent1!",
+        },
+        headers=hdrs,
+    )
+    assert grd_r.status_code == 201, grd_r.text
+    parent_token = await login(client, parent_username, "Parent1!", slug)
+
+    # Parent creates appointment targeting the teacher
+    appt_r = await client.post(
+        "/appointments",
+        json={
+            "employee_id": teacher_employee_id,
+            "title": "Role filter test meeting",
+            "proposed_date": "2025-12-10",
+        },
+        headers=auth(parent_token),
+    )
+    assert appt_r.status_code == 201, appt_r.text
+    appointment_id = appt_r.json()["id"]
+
+    return {
+        "admin_token": admin_token,
+        "teacher_token": teacher_token,
+        "teacher_employee_id": teacher_employee_id,
+        "staff_token": staff_token,
+        "parent_token": parent_token,
+        "appointment_id": appointment_id,
+    }
+
+
+async def test_admin_sees_all_appointments(client: AsyncClient, make_school):
+    """School admin sees every appointment regardless of who created it."""
+    ctx = await _setup_appointment_scenario(client, make_school, "arole-adm")
+    r = await client.get("/appointments", headers=auth(ctx["admin_token"]))
+    assert r.status_code == 200
+    ids = [a["id"] for a in r.json()]
+    assert ctx["appointment_id"] in ids
+
+
+async def test_teacher_sees_appointments_assigned_to_them(client: AsyncClient, make_school):
+    """Teacher sees appointments where they are the target employee."""
+    ctx = await _setup_appointment_scenario(client, make_school, "arole-tch")
+    r = await client.get("/appointments", headers=auth(ctx["teacher_token"]))
+    assert r.status_code == 200
+    ids = [a["id"] for a in r.json()]
+    assert ctx["appointment_id"] in ids
+
+
+async def test_staff_not_target_sees_empty(client: AsyncClient, make_school):
+    """Staff who is NOT the target employee sees an empty list (no cross-leakage)."""
+    ctx = await _setup_appointment_scenario(client, make_school, "arole-stf")
+    r = await client.get("/appointments", headers=auth(ctx["staff_token"]))
+    assert r.status_code == 200
+    ids = [a["id"] for a in r.json()]
+    # The staff member is not the target, so they should NOT see this appointment
+    assert ctx["appointment_id"] not in ids
+
+
+async def test_parent_sees_own_appointments_only(client: AsyncClient, make_school):
+    """Parent sees only their own requested appointments."""
+    ctx = await _setup_appointment_scenario(client, make_school, "arole-par")
+    r = await client.get("/appointments", headers=auth(ctx["parent_token"]))
+    assert r.status_code == 200
+    ids = [a["id"] for a in r.json()]
+    assert ctx["appointment_id"] in ids

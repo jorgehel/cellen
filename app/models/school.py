@@ -24,6 +24,7 @@ class School(Base):
     phone: Mapped[Optional[str]] = mapped_column(String(50))
     email: Mapped[Optional[str]] = mapped_column(String(255))
     logo_url: Mapped[Optional[str]] = mapped_column(String(500))
+    currency: Mapped[str] = mapped_column(String(10), nullable=False, default="AOA")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     subscription_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     subscription_notes: Mapped[Optional[str]] = mapped_column(Text)

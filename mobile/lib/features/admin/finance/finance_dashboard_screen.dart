@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/models/invoice.dart';
+import '../../../core/providers/currency_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Data model
@@ -66,7 +67,7 @@ class FinanceDashboardScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final summaryAsync = ref.watch(financeSummaryProvider);
     final recentAsync = ref.watch(recentInvoicesProvider);
-    final currency = NumberFormat.currency(locale: 'pt_PT', symbol: '€');
+    final currency = ref.watch(currencyFormatProvider);
     final now = DateTime.now();
     final monthLabel = DateFormat('MMMM yyyy', 'pt_PT').format(now);
 

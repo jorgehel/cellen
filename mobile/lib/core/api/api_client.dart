@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:image_picker/image_picker.dart';
 import 'api_exception.dart';
 
 // ---------------------------------------------------------------------------
@@ -169,6 +170,24 @@ class ApiClient {
   Future<dynamic> delete(String path) async {
     try {
       final response = await _dio.delete(path);
+      return response.data;
+    } on DioException catch (e) {
+      throw _mapException(e);
+    }
+  }
+
+  /// Upload a file as multipart/form-data.
+  Future<dynamic> uploadFile(
+    String path,
+    XFile file, {
+    String fieldName = 'file',
+  }) async {
+    try {
+      final bytes = await file.readAsBytes();
+      final formData = FormData.fromMap({
+        fieldName: MultipartFile.fromBytes(bytes, filename: file.name),
+      });
+      final response = await _dio.post(path, data: formData);
       return response.data;
     } on DioException catch (e) {
       throw _mapException(e);

@@ -4,10 +4,11 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/api/api_client.dart';
+import '../../../core/models/caderneta.dart';
 import '../../../core/models/child.dart';
 import '../../../core/models/guardian.dart';
-import '../../../core/models/caderneta.dart';
 import '../../../core/models/invoice.dart';
+import '../../../core/providers/currency_provider.dart';
 import 'children_list_screen.dart' show childrenProvider;
 
 // ---------------------------------------------------------------------------
@@ -512,7 +513,7 @@ class _InvoicesTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(childInvoicesProvider(childId));
-    final currency = NumberFormat.currency(locale: 'pt_PT', symbol: '€');
+    final currency = ref.watch(currencyFormatProvider);
 
     return async.when(
       loading: () => const Center(child: CircularProgressIndicator()),
