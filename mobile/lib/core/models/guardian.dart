@@ -54,12 +54,12 @@ class Guardian {
       firstName: json['first_name'] as String? ?? '',
       middleName: json['middle_name'] as String?,
       lastName: json['last_name'] as String? ?? '',
-      relationship: json['relationship'] as String? ?? '',
-      phone: json['phone'] as String?,
+      relationship: json['relationship_type'] as String? ?? json['relationship'] as String? ?? '',
+      phone: json['mobile_first'] as String? ?? json['phone'] as String?,
       email: json['email'] as String?,
-      cedula: json['cedula'] as String?,
-      address: json['address'] as String?,
-      isPrimary: json['is_primary'] as bool? ?? false,
+      cedula: json['id_card_number'] as String? ?? json['cedula'] as String?,
+      address: json['street'] as String? ?? json['address'] as String?,
+      isPrimary: json['is_primary_contact'] as bool? ?? json['is_primary'] as bool? ?? false,
       authorizedPickup: json['authorized_pickup'] as bool? ?? false,
     );
   }

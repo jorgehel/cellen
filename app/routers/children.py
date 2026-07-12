@@ -196,11 +196,11 @@ async def get_child_guardians(
         raise HTTPException(status_code=404, detail="Child not found")
 
     result = await db.execute(
-        select(Guardian)
+        select(Guardian, ChildGuardian)
         .join(ChildGuardian, ChildGuardian.guardian_id == Guardian.id)
         .where(ChildGuardian.child_id == child_id, ChildGuardian.school_id == school_id)
     )
-    guardians = result.scalars().all()
+    rows = result.all()
     return [
         {
             "id": str(g.id),
@@ -213,8 +213,10 @@ async def get_child_guardians(
             "email": g.email,
             "profession": g.profession,
             "id_card_number": g.id_card_number,
+            "relationship_type": cg.relationship_type,
+            "is_primary_contact": cg.is_primary_contact,
         }
-        for g in guardians
+        for g, cg in rows
     ]
 
 

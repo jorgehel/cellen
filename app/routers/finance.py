@@ -248,9 +248,32 @@ async def create_invoice(
     db: AsyncSession = Depends(get_db),
     _=Depends(require_school_admin),
 ):
+    from app.models.school import School
+    from app.utils.agt import compute_hash, generate_document_number, get_last_document_hash, get_next_series_number
+
     data = body.model_dump()
     total = (data.get("tuition_amount") or Decimal("0")) + (data.get("other_fees") or Decimal("0"))
-    invoice = Invoice(school_id=school_id, total_amount=total, **data)
+
+    school_result = await db.execute(select(School).where(School.id == school_id))
+    school = school_result.scalar_one_or_none()
+    nif_emitter = (school.nif or "") if school else ""
+
+    today = data.get("invoice_date") or date.today()
+    ft_number = await get_next_series_number(db, school_id, "FT", today.year)
+    ft_doc_number = generate_document_number("FT", today.year, ft_number)
+    prev_hash = await get_last_document_hash(db, school_id, Invoice)
+    ft_hash = compute_hash(ft_doc_number, today, nif_emitter, "Consumidor Final", float(total), prev_hash)
+
+    invoice = Invoice(
+        school_id=school_id,
+        total_amount=total,
+        series_number=ft_number,
+        series_year=today.year,
+        full_document_number=ft_doc_number,
+        hash_code=ft_hash,
+        previous_hash=prev_hash,
+        **data,
+    )
     db.add(invoice)
     await db.commit()
     await db.refresh(invoice)
@@ -265,6 +288,15 @@ async def bulk_create_invoices(
     _=Depends(require_school_admin),
 ):
     from app.models.academic import Enrollment
+    from app.models.school import School
+    from app.utils.agt import compute_hash, generate_document_number, get_last_document_hash, get_next_series_number
+
+    school_result = await db.execute(select(School).where(School.id == school_id))
+    school = school_result.scalar_one_or_none()
+    nif_emitter = (school.nif or "") if school else ""
+
+    today = date.today()
+    total_amount = body.tuition_amount + body.other_fees
 
     # Get all active children in this school year
     children_result = await db.execute(
@@ -280,10 +312,11 @@ async def bulk_create_invoices(
     )
     child_ids = [row[0] for row in children_result.all()]
 
-    total_amount = body.tuition_amount + body.other_fees
+    # Seed hash chain from last existing invoice
+    last_hash = await get_last_document_hash(db, school_id, Invoice)
+
     invoices = []
     for child_id in child_ids:
-        # Check if invoice already exists for this child/month
         existing = await db.execute(
             select(Invoice).where(
                 Invoice.school_id == school_id,
@@ -292,7 +325,12 @@ async def bulk_create_invoices(
             )
         )
         if existing.scalar_one_or_none():
-            continue  # Skip, already has an invoice for this month
+            continue
+
+        ft_number = await get_next_series_number(db, school_id, "FT", today.year)
+        ft_doc_number = generate_document_number("FT", today.year, ft_number)
+        ft_hash = compute_hash(ft_doc_number, today, nif_emitter, "Consumidor Final", float(total_amount), last_hash)
+        last_hash = ft_hash  # chain to next invoice
 
         invoice = Invoice(
             school_id=school_id,
@@ -305,6 +343,11 @@ async def bulk_create_invoices(
             total_amount=total_amount,
             due_date=body.due_date,
             description=body.description,
+            series_number=ft_number,
+            series_year=today.year,
+            full_document_number=ft_doc_number,
+            hash_code=ft_hash,
+            previous_hash=last_hash,
         )
         db.add(invoice)
         invoices.append(invoice)
