@@ -41,6 +41,9 @@ class ThreadResponse(BaseModel):
     thread_type: str
     created_by: uuid.UUID
     created_at: Optional[datetime] = None
+    last_message_body: Optional[str] = None
+    last_message_at: Optional[datetime] = None
+    unread_count: int = 0
 
     model_config = {"from_attributes": True}
 
@@ -51,6 +54,7 @@ class MessageResponse(BaseModel):
     sender_id: uuid.UUID
     body: str
     created_at: Optional[datetime] = None
+    read_count: int = 0
 
     model_config = {"from_attributes": True}
 
@@ -80,7 +84,57 @@ async def list_threads(
         .where(MessageThread.id.in_(thread_ids), MessageThread.school_id == school_id)
         .order_by(MessageThread.created_at.desc())
     )
-    return result.scalars().all()
+    threads = result.scalars().all()
+
+    # Bulk fetch latest message per thread
+    messages_result = await db.execute(
+        select(Message)
+        .where(Message.thread_id.in_(thread_ids), Message.school_id == school_id)
+        .order_by(Message.created_at.asc())
+    )
+    all_messages = messages_result.scalars().all()
+
+    # Build per-thread lookups
+    latest_msg: dict[uuid.UUID, Message] = {}
+    thread_messages: dict[uuid.UUID, list] = {tid: [] for tid in thread_ids}
+    for msg in all_messages:
+        latest_msg[msg.thread_id] = msg  # last wins since ordered asc
+        thread_messages[msg.thread_id].append(msg)
+
+    # Fetch current user's participant row for each thread (for last_read_at)
+    participants_result = await db.execute(
+        select(ThreadParticipant).where(
+            ThreadParticipant.thread_id.in_(thread_ids),
+            ThreadParticipant.user_id == current_user.id,
+        )
+    )
+    user_participants: dict[uuid.UUID, ThreadParticipant] = {
+        p.thread_id: p for p in participants_result.scalars().all()
+    }
+
+    enriched = []
+    for thread in threads:
+        last = latest_msg.get(thread.id)
+        participant = user_participants.get(thread.id)
+        last_read_at = participant.last_read_at if participant else None
+
+        # Count messages created after the user's last read time
+        msgs_in_thread = thread_messages.get(thread.id, [])
+        if last_read_at is None:
+            unread_count = len(msgs_in_thread)
+        else:
+            unread_count = sum(
+                1 for m in msgs_in_thread if m.created_at > last_read_at
+            )
+
+        enriched.append({
+            **thread.__dict__,
+            "last_message_body": last.body if last else None,
+            "last_message_at": last.created_at if last else None,
+            "unread_count": unread_count,
+        })
+
+    return enriched
 
 
 @router.post("/threads", response_model=ThreadResponse, status_code=status.HTTP_201_CREATED)
@@ -157,7 +211,26 @@ async def list_thread_messages(
         .where(Message.thread_id == thread_id, Message.school_id == school_id)
         .order_by(Message.created_at.asc())
     )
-    return result.scalars().all()
+    messages = result.scalars().all()
+
+    # Fetch all participants for read-receipt computation
+    participants_result = await db.execute(
+        select(ThreadParticipant).where(ThreadParticipant.thread_id == thread_id)
+    )
+    participants = participants_result.scalars().all()
+
+    enriched = []
+    for msg in messages:
+        read_count = sum(
+            1
+            for p in participants
+            if p.user_id != msg.sender_id
+            and p.last_read_at is not None
+            and p.last_read_at >= msg.created_at
+        )
+        enriched.append({**msg.__dict__, "read_count": read_count})
+
+    return enriched
 
 
 @router.post("/threads/{thread_id}/messages", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)

@@ -6,6 +6,7 @@ class MessageThread {
   final DateTime createdAt;
   final int unreadCount;
   final String? lastMessage;
+  final DateTime? lastMessageAt;
 
   const MessageThread({
     required this.id,
@@ -15,6 +16,7 @@ class MessageThread {
     required this.createdAt,
     required this.unreadCount,
     this.lastMessage,
+    this.lastMessageAt,
   });
 
   factory MessageThread.fromJson(Map<String, dynamic> json) {
@@ -28,6 +30,9 @@ class MessageThread {
           : DateTime.now(),
       unreadCount: json['unread_count'] as int? ?? 0,
       lastMessage: json['last_message']?.toString() ?? json['last_message_body']?.toString(),
+      lastMessageAt: json['last_message_at'] != null
+          ? DateTime.tryParse(json['last_message_at'].toString())
+          : null,
     );
   }
 }
@@ -38,6 +43,7 @@ class Message {
   final String senderName;
   final String body;
   final DateTime createdAt;
+  final int readCount;
 
   const Message({
     required this.id,
@@ -45,6 +51,7 @@ class Message {
     required this.senderName,
     required this.body,
     required this.createdAt,
+    this.readCount = 0,
   });
 
   factory Message.fromJson(Map<String, dynamic> json) {
@@ -56,6 +63,7 @@ class Message {
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
           : DateTime.now(),
+      readCount: json['read_count'] as int? ?? 0,
     );
   }
 }

@@ -47,6 +47,7 @@ import '../../features/health/health_events_screen.dart';
 import '../../features/health/immunizations_screen.dart';
 import '../../features/admin/guardians/guardians_list_screen.dart';
 import '../../features/admin/guardians/guardian_form_screen.dart';
+import '../../features/trip_authorizations/trip_authorizations_screen.dart';
 
 // ---------------------------------------------------------------------------
 // Nav item definitions per role
@@ -69,6 +70,7 @@ const _adminItems = [
   SidebarItem(path: '/health', label: 'Saúde', icon: Icons.health_and_safety_outlined, selectedIcon: Icons.health_and_safety),
   SidebarItem(path: '/admin/health/immunizations', label: 'Vacinas', icon: Icons.vaccines_outlined, selectedIcon: Icons.vaccines),
   SidebarItem(path: '/appointments', label: 'Marcações', icon: Icons.calendar_month_outlined, selectedIcon: Icons.calendar_month),
+  SidebarItem(path: '/trip-authorizations', label: 'Autorizações', icon: Icons.assignment_outlined, selectedIcon: Icons.assignment),
   SidebarItem(path: '/notifications', label: 'Notificações', icon: Icons.notifications_outlined, selectedIcon: Icons.notifications),
 ];
 
@@ -81,6 +83,7 @@ const _teacherItems = [
   SidebarItem(path: '/health', label: 'Saúde', icon: Icons.health_and_safety_outlined, selectedIcon: Icons.health_and_safety),
   SidebarItem(path: '/teacher/health/immunizations', label: 'Vacinas', icon: Icons.vaccines_outlined, selectedIcon: Icons.vaccines),
   SidebarItem(path: '/appointments', label: 'Marcações', icon: Icons.calendar_month_outlined, selectedIcon: Icons.calendar_month),
+  SidebarItem(path: '/trip-authorizations', label: 'Autorizações', icon: Icons.assignment_outlined, selectedIcon: Icons.assignment),
   SidebarItem(path: '/messages', label: 'Mensagens', icon: Icons.chat_bubble_outline, selectedIcon: Icons.chat_bubble),
   SidebarItem(path: '/notifications', label: 'Notificações', icon: Icons.notifications_outlined, selectedIcon: Icons.notifications),
 ];
@@ -95,6 +98,7 @@ const _parentItems = [
   SidebarItem(path: '/documents', label: 'Documentos', icon: Icons.folder_outlined, selectedIcon: Icons.folder),
   SidebarItem(path: '/evaluations', label: 'Avaliações', icon: Icons.school_outlined, selectedIcon: Icons.school),
   SidebarItem(path: '/appointments', label: 'Marcações', icon: Icons.calendar_month_outlined, selectedIcon: Icons.calendar_month),
+  SidebarItem(path: '/trip-authorizations', label: 'Autorizações', icon: Icons.assignment_outlined, selectedIcon: Icons.assignment),
   SidebarItem(path: '/parent/invoices', label: 'Faturas', icon: Icons.receipt_long_outlined, selectedIcon: Icons.receipt_long),
 ];
 
@@ -377,6 +381,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/appointments',
             builder: (_, __) => const AppointmentsScreen(),
+          ),
+          GoRoute(
+            path: '/trip-authorizations',
+            builder: (_, __) => const TripAuthorizationsScreen(),
           ),
           GoRoute(
             path: '/evaluations',

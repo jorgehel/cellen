@@ -124,6 +124,7 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
                     return _MessageBubble(
                       message: msg,
                       isMine: isMine,
+                      currentUserId: auth.userId ?? '',
                     );
                   },
                 );
@@ -220,8 +221,13 @@ class _ThreadScreenState extends ConsumerState<ThreadScreen> {
 class _MessageBubble extends StatelessWidget {
   final Message message;
   final bool isMine;
+  final String currentUserId;
 
-  const _MessageBubble({required this.message, required this.isMine});
+  const _MessageBubble({
+    required this.message,
+    required this.isMine,
+    required this.currentUserId,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -299,13 +305,26 @@ class _MessageBubble extends StatelessWidget {
               left: isMine ? 0 : 34,
               right: isMine ? 4 : 0,
             ),
-            child: Text(
-              timeStr,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurfaceVariant,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  timeStr,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+                if (isMine) ...[
+                  const SizedBox(width: 3),
+                  Icon(
+                    message.readCount > 0 ? Icons.done_all : Icons.done,
+                    size: 13,
+                    color: message.readCount > 0
+                        ? Colors.teal
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
+                ],
+              ],
             ),
           ),
         ],

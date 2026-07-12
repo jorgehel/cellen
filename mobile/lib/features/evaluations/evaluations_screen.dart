@@ -7,6 +7,7 @@ import '../../core/auth/auth_provider.dart';
 import '../../core/auth/auth_state.dart';
 import '../../core/models/child.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/boletim_pdf.dart';
 
 // ---------------------------------------------------------------------------
 // Model
@@ -97,6 +98,8 @@ class EvaluationsScreen extends ConsumerStatefulWidget {
 
 class _EvaluationsScreenState extends ConsumerState<EvaluationsScreen> {
   String? _periodFilter;
+  String? _childFilter; // child id selected for filter / boletim
+  bool _isGeneratingBoletim = false;
 
   static const _periods = ['1T', '2T', '3T', 'anual'];
   static const _periodLabels = {
@@ -109,6 +112,7 @@ class _EvaluationsScreenState extends ConsumerState<EvaluationsScreen> {
   @override
   Widget build(BuildContext context) {
     final evaluationsAsync = ref.watch(evaluationsProvider);
+    final childrenAsync = ref.watch(childrenForEvaluationProvider);
     final auth = ref.watch(authProvider);
     final canCreate = auth.isAdmin || auth.isTeacher;
 
@@ -116,6 +120,24 @@ class _EvaluationsScreenState extends ConsumerState<EvaluationsScreen> {
       appBar: AppBar(
         title: const Text('Avaliações'),
         actions: [
+          // Boletim button
+          if (_isGeneratingBoletim)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.summarize_outlined),
+              tooltip: 'Boletim de Notas',
+              onPressed: () => _handleBoletim(context, childrenAsync),
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () => ref.invalidate(evaluationsProvider),
@@ -131,7 +153,39 @@ class _EvaluationsScreenState extends ConsumerState<EvaluationsScreen> {
           : null,
       body: Column(
         children: [
-          // Period filter
+          // Child filter dropdown
+          childrenAsync.maybeWhen(
+            data: (children) => children.isEmpty
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                    child: DropdownButtonFormField<String>(
+                      value: _childFilter,
+                      decoration: const InputDecoration(
+                        labelText: 'Criança',
+                        prefixIcon: Icon(Icons.child_care),
+                        isDense: true,
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      ),
+                      isExpanded: true,
+                      items: [
+                        const DropdownMenuItem<String>(
+                          value: null,
+                          child: Text('Todas as crianças'),
+                        ),
+                        ...children.map((c) => DropdownMenuItem<String>(
+                              value: c.id,
+                              child: Text(c.fullName),
+                            )),
+                      ],
+                      onChanged: (v) => setState(() => _childFilter = v),
+                    ),
+                  ),
+            orElse: () => const SizedBox.shrink(),
+          ),
+
+          // Period filter chips
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
             child: SingleChildScrollView(
@@ -187,12 +241,19 @@ class _EvaluationsScreenState extends ConsumerState<EvaluationsScreen> {
                 ),
               ),
               data: (evaluations) {
-                final filtered = _periodFilter == null
+                // Apply child filter
+                var filtered = _childFilter == null
                     ? evaluations
                     : evaluations
-                        .where(
-                            (e) => e.evaluationPeriod == _periodFilter)
+                        .where((e) => e.childId == _childFilter)
                         .toList();
+
+                // Apply period filter
+                if (_periodFilter != null) {
+                  filtered = filtered
+                      .where((e) => e.evaluationPeriod == _periodFilter)
+                      .toList();
+                }
 
                 if (filtered.isEmpty) {
                   return Center(
@@ -227,6 +288,65 @@ class _EvaluationsScreenState extends ConsumerState<EvaluationsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _handleBoletim(
+    BuildContext context,
+    AsyncValue<List<Child>> childrenAsync,
+  ) async {
+    if (_childFilter == null) {
+      // No child selected — prompt the user
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Seleccione uma Criança'),
+          content: const Text(
+            'Para gerar o Boletim de Notas, seleccione primeiro uma criança '
+            'no filtro acima.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isGeneratingBoletim = true);
+    try {
+      final api = ref.read(apiClientProvider);
+
+      // Fetch child info
+      final childData =
+          await api.get('/children/$_childFilter') as Map<String, dynamic>;
+
+      // Fetch evaluations for this child
+      final evalsData =
+          await api.get('/evaluations/child/$_childFilter') as List;
+      final evalsList = evalsData
+          .map((e) => e as Map<String, dynamic>)
+          .toList();
+
+      if (!mounted) return;
+
+      await generateAndShareBoletim(
+        child: childData,
+        evaluations: evalsList,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao gerar boletim: $e'),
+          backgroundColor: AppTheme.danger,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isGeneratingBoletim = false);
+    }
   }
 
   void _showCreateDialog(BuildContext context) {

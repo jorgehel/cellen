@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:timeago/timeago.dart' as timeago;
 
 import '../../core/api/api_client.dart';
 import '../../core/auth/auth_provider.dart';
@@ -373,7 +374,8 @@ class _ThreadTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final timeStr = DateFormat('dd/MM HH:mm').format(thread.createdAt);
+    final displayAt = thread.lastMessageAt ?? thread.createdAt;
+    final timeStr = timeago.format(displayAt, locale: 'pt_BR', allowFromNow: true);
 
     return ListTile(
       leading: Stack(
@@ -403,6 +405,9 @@ class _ThreadTile extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
+                fontWeight: thread.unreadCount > 0
+                    ? FontWeight.w600
+                    : FontWeight.normal,
                 color: thread.unreadCount > 0
                     ? Theme.of(context).colorScheme.onSurface
                     : Theme.of(context).colorScheme.onSurfaceVariant,
@@ -413,8 +418,10 @@ class _ThreadTile extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          Text(timeStr,
-              style: Theme.of(context).textTheme.labelSmall),
+          Text(
+            timeStr,
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
           const SizedBox(height: 4),
           if (thread.unreadCount > 0)
             badges.Badge(
