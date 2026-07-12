@@ -481,6 +481,7 @@ class _RecordPaymentDialogState
 
   @override
   Widget build(BuildContext context) {
+    final currency = ref.watch(currencyFormatProvider);
     return AlertDialog(
       title: const Text('Registar Pagamento'),
       content: SizedBox(
@@ -494,9 +495,9 @@ class _RecordPaymentDialogState
                 controller: _amountCtrl,
                 keyboardType: const TextInputType.numberWithOptions(
                     decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'Valor (€) *',
-                  prefixIcon: Icon(Icons.euro),
+                decoration: InputDecoration(
+                  labelText: 'Valor (${currency.currencySymbol}) *',
+                  prefixIcon: const Icon(Icons.monetization_on_outlined),
                 ),
                 validator: (v) {
                   if (v == null || v.trim().isEmpty)
@@ -715,6 +716,7 @@ class _BulkGenerateDialogState
 
   @override
   Widget build(BuildContext context) {
+    final currency = ref.watch(currencyFormatProvider);
     return AlertDialog(
       title: const Text('Gerar Facturas em Massa'),
       content: SizedBox(
@@ -768,9 +770,9 @@ class _BulkGenerateDialogState
                         keyboardType:
                             const TextInputType.numberWithOptions(
                                 decimal: true),
-                        decoration: const InputDecoration(
-                          labelText: 'Mensalidade (€) *',
-                          prefixIcon: Icon(Icons.euro),
+                        decoration: InputDecoration(
+                          labelText: 'Mensalidade (${currency.currencySymbol}) *',
+                          prefixIcon: const Icon(Icons.monetization_on_outlined),
                         ),
                         validator: (v) {
                           if (v == null || v.trim().isEmpty)
@@ -786,10 +788,10 @@ class _BulkGenerateDialogState
                         keyboardType:
                             const TextInputType.numberWithOptions(
                                 decimal: true),
-                        decoration: const InputDecoration(
-                          labelText: 'Outras taxas (€)',
+                        decoration: InputDecoration(
+                          labelText: 'Outras taxas (${currency.currencySymbol})',
                           prefixIcon:
-                              Icon(Icons.add_circle_outline),
+                              const Icon(Icons.add_circle_outline),
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -922,6 +924,7 @@ class _CreateInvoiceSheetState
   @override
   Widget build(BuildContext context) {
     final childrenAsync = ref.watch(childrenForInvoiceProvider);
+    final currency = ref.watch(currencyFormatProvider);
 
     return Padding(
       padding: EdgeInsets.only(
@@ -972,9 +975,9 @@ class _CreateInvoiceSheetState
               controller: _tuitionCtrl,
               keyboardType: const TextInputType.numberWithOptions(
                   decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Mensalidade (€) *',
-                prefixIcon: Icon(Icons.euro),
+              decoration: InputDecoration(
+                labelText: 'Mensalidade (${currency.currencySymbol}) *',
+                prefixIcon: const Icon(Icons.monetization_on_outlined),
               ),
               validator: (v) =>
                   v == null || v.trim().isEmpty
@@ -987,9 +990,9 @@ class _CreateInvoiceSheetState
               controller: _otherFeesCtrl,
               keyboardType: const TextInputType.numberWithOptions(
                   decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Outras taxas (€)',
-                prefixIcon: Icon(Icons.add_circle_outline),
+              decoration: InputDecoration(
+                labelText: 'Outras taxas (${currency.currencySymbol})',
+                prefixIcon: const Icon(Icons.add_circle_outline),
               ),
             ),
             const SizedBox(height: 12),

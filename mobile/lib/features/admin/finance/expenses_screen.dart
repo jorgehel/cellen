@@ -351,6 +351,7 @@ class _AddExpenseSheetState extends ConsumerState<_AddExpenseSheet> {
   @override
   Widget build(BuildContext context) {
     final categoriesAsync = ref.watch(expenseCategoriesProvider);
+    final currency = ref.watch(currencyFormatProvider);
 
     return Padding(
       padding: EdgeInsets.only(
@@ -387,9 +388,9 @@ class _AddExpenseSheetState extends ConsumerState<_AddExpenseSheet> {
               controller: _amountCtrl,
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Valor (€) *',
-                prefixIcon: Icon(Icons.euro),
+              decoration: InputDecoration(
+                labelText: 'Valor (${currency.currencySymbol}) *',
+                prefixIcon: const Icon(Icons.monetization_on_outlined),
               ),
               validator: (v) =>
                   v == null || v.trim().isEmpty ? 'Campo obrigatório' : null,
