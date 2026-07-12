@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
+import 'package:local_auth/local_auth.dart';
 
 import '../../core/auth/auth_provider.dart';
 import '../../core/auth/auth_state.dart';
@@ -21,6 +23,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _obscurePassword = true;
   bool _isPlatformLogin = false;
 
+  // Biometric state
+  final _localAuth = LocalAuthentication();
+  final _secureStorage = const FlutterSecureStorage();
+  bool _biometricAvailable = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkBiometric();
+  }
+
+  Future<void> _checkBiometric() async {
+    try {
+      final canCheck = await _localAuth.canCheckBiometrics;
+      final isSupported = await _localAuth.isDeviceSupported();
+      if (!canCheck || !isSupported) return;
+
+      final savedEmail = await _secureStorage.read(key: 'saved_email');
+      final savedPassword = await _secureStorage.read(key: 'saved_password');
+
+      if (savedEmail != null && savedPassword != null && mounted) {
+        setState(() => _biometricAvailable = true);
+      }
+    } catch (_) {
+      // Biometric check failed silently — button stays hidden
+    }
+  }
+
   @override
   void dispose() {
     _usernameController.dispose();
@@ -40,10 +70,56 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
+  Future<void> _saveCredentials(String email, String password) async {
+    await _secureStorage.write(key: 'saved_email', value: email);
+    await _secureStorage.write(key: 'saved_password', value: password);
+  }
+
+  Future<void> _loginWithBiometric() async {
+    try {
+      final authenticated = await _localAuth.authenticate(
+        localizedReason: 'Autentique-se para entrar no Cellen',
+        options: const AuthenticationOptions(
+          biometricOnly: true,
+          stickyAuth: true,
+        ),
+      );
+      if (!authenticated) return;
+
+      final savedEmail = await _secureStorage.read(key: 'saved_email');
+      final savedPassword = await _secureStorage.read(key: 'saved_password');
+      if (savedEmail == null || savedPassword == null) return;
+
+      // Populate the form fields so the standard submit path is used
+      _usernameController.text = savedEmail;
+      _passwordController.text = savedPassword;
+
+      ref.read(authProvider.notifier).login(
+            username: savedEmail,
+            password: savedPassword,
+            schoolSlug: _isPlatformLogin
+                ? null
+                : _schoolSlugController.text.trim().isNotEmpty
+                    ? _schoolSlugController.text.trim()
+                    : null,
+          );
+    } catch (_) {
+      // Biometric failed — fall back gracefully (user can type credentials)
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    ref.listen<AuthState>(authProvider, (_, next) {
+    ref.listen<AuthState>(authProvider, (prev, next) async {
       if (next.isAuthenticated) {
+        // Persist credentials for future biometric logins
+        final email = _usernameController.text.trim();
+        final password = _passwordController.text;
+        if (email.isNotEmpty && password.isNotEmpty) {
+          await _saveCredentials(email, password);
+        }
+
+        if (!mounted) return;
         final dest = switch (next.role) {
           UserRole.platformAdmin || UserRole.schoolAdmin => '/admin',
           UserRole.teacher || UserRole.staff => '/teacher',
@@ -244,6 +320,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                       fontWeight: FontWeight.w700)),
                         ),
                       ),
+
+                      // Biometric login button — only shown when available
+                      if (_biometricAvailable) ...[
+                        const SizedBox(height: 16),
+                        OutlinedButton.icon(
+                          onPressed: authState.isLoading
+                              ? null
+                              : _loginWithBiometric,
+                          icon: const Icon(Icons.fingerprint, size: 22),
+                          label: const Text(
+                            'Entrar com biometria',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(52),
+                            side: BorderSide(
+                              color: AppTheme.primary.withOpacity(0.5),
+                            ),
+                            foregroundColor: AppTheme.primary,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),

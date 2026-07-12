@@ -109,8 +109,31 @@ class InvoiceResponse(InvoiceBase):
     status: str
     amount_paid: Decimal = Decimal("0")
     balance: Decimal = Decimal("0")
+    multicaixa_entity: Optional[str] = None
+    multicaixa_ref: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+
+class MulticaixaResponse(BaseModel):
+    entidade: str
+    referencia: str
+    montante: str
+
+
+class ParentInvoiceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    child_id: uuid.UUID
+    child_name: str
+    reference_month: date
+    total_amount: Decimal
+    status: str
+    due_date: Optional[date] = None
+    multicaixa_entity: Optional[str] = None
+    multicaixa_ref: Optional[str] = None
+    amount_paid: Decimal = Decimal("0")
+    balance: Decimal = Decimal("0")
 
 
 # Payment

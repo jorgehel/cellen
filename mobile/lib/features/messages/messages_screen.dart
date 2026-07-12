@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/auth/auth_provider.dart';
+import '../../core/auth/auth_state.dart';
 import '../../core/models/message.dart';
 
 // ---------------------------------------------------------------------------
@@ -33,6 +35,8 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
   @override
   Widget build(BuildContext context) {
     final threadsAsync = ref.watch(messageThreadsProvider);
+    final authState = ref.watch(authProvider);
+    final canBroadcast = authState.isAdmin || authState.isTeacher;
 
     return Scaffold(
       appBar: AppBar(
@@ -44,9 +48,29 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _showNewThreadDialog,
-        child: const Icon(Icons.edit),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // Broadcast FAB — only for admins/teachers
+          if (canBroadcast) ...[
+            FloatingActionButton.extended(
+              heroTag: 'broadcast_fab',
+              onPressed: _showBroadcastDialog,
+              icon: const Icon(Icons.campaign_outlined),
+              label: const Text('Comunicado'),
+              backgroundColor: Theme.of(context).colorScheme.secondary,
+              foregroundColor: Theme.of(context).colorScheme.onSecondary,
+            ),
+            const SizedBox(height: 12),
+          ],
+          // Standard new thread FAB
+          FloatingActionButton(
+            heroTag: 'new_thread_fab',
+            onPressed: _showNewThreadDialog,
+            child: const Icon(Icons.edit),
+          ),
+        ],
       ),
       body: threadsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -93,6 +117,166 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  void _showBroadcastDialog() {
+    final subjectCtrl = TextEditingController();
+    final messageCtrl = TextEditingController();
+    String selectedTarget = 'all';
+    bool isLoading = false;
+
+    const targetOptions = [
+      ('all', 'Todos'),
+      ('parents', 'Encarregados'),
+      ('teachers', 'Professores/Staff'),
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: EdgeInsets.only(
+            left: 24,
+            right: 24,
+            top: 24,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Handle
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+
+              // Title
+              Row(
+                children: [
+                  const Icon(Icons.campaign_outlined, size: 22),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Novo Comunicado',
+                    style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // Subject
+              TextField(
+                controller: subjectCtrl,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  labelText: 'Assunto',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Message
+              TextField(
+                controller: messageCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Mensagem',
+                  border: OutlineInputBorder(),
+                  alignLabelWithHint: true,
+                ),
+                maxLines: 4,
+                textInputAction: TextInputAction.newline,
+              ),
+              const SizedBox(height: 12),
+
+              // Target dropdown
+              DropdownButtonFormField<String>(
+                value: selectedTarget,
+                decoration: const InputDecoration(
+                  labelText: 'Destinatários',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.people_outline),
+                ),
+                items: targetOptions
+                    .map((opt) => DropdownMenuItem(
+                          value: opt.$1,
+                          child: Text(opt.$2),
+                        ))
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) setSheetState(() => selectedTarget = v);
+                },
+              ),
+              const SizedBox(height: 20),
+
+              // Send button
+              ElevatedButton.icon(
+                onPressed: isLoading
+                    ? null
+                    : () async {
+                        if (subjectCtrl.text.trim().isEmpty ||
+                            messageCtrl.text.trim().isEmpty) {
+                          return;
+                        }
+                        setSheetState(() => isLoading = true);
+                        try {
+                          await ref.read(apiClientProvider).post(
+                            '/messages/broadcast',
+                            data: {
+                              'subject': subjectCtrl.text.trim(),
+                              'message': messageCtrl.text.trim(),
+                              'target': selectedTarget,
+                            },
+                          );
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          ref.invalidate(messageThreadsProvider);
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Comunicado enviado'),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (ctx.mounted) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              SnackBar(content: Text('Erro: $e')),
+                            );
+                          }
+                        } finally {
+                          setSheetState(() => isLoading = false);
+                        }
+                      },
+                icon: isLoading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.send_outlined),
+                label: Text(isLoading ? 'A enviar...' : 'Enviar Comunicado'),
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(50),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -253,6 +437,8 @@ class _ThreadTile extends StatelessWidget {
 
   IconData _typeIcon(String type) {
     switch (type) {
+      case 'broadcast':
+        return Icons.campaign;
       case 'announcement':
         return Icons.campaign;
       case 'invoice':
@@ -266,6 +452,8 @@ class _ThreadTile extends StatelessWidget {
 
   Color _typeColor(String type) {
     switch (type) {
+      case 'broadcast':
+        return Colors.purple;
       case 'announcement':
         return Colors.blue;
       case 'invoice':

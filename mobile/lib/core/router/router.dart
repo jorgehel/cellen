@@ -26,6 +26,7 @@ import '../../features/teacher/caderneta/caderneta_form_screen.dart';
 import '../../features/teacher/attendance/attendance_screen.dart';
 import '../../features/parent/dashboard/parent_dashboard_screen.dart';
 import '../../features/parent/caderneta/child_caderneta_screen.dart';
+import '../../features/parent/finance/parent_invoices_screen.dart';
 import '../../features/parent/menu/food_menu_screen.dart';
 import '../../features/messages/messages_screen.dart';
 import '../../features/messages/thread_screen.dart';
@@ -94,6 +95,7 @@ const _parentItems = [
   SidebarItem(path: '/documents', label: 'Documentos', icon: Icons.folder_outlined, selectedIcon: Icons.folder),
   SidebarItem(path: '/evaluations', label: 'Avaliações', icon: Icons.school_outlined, selectedIcon: Icons.school),
   SidebarItem(path: '/appointments', label: 'Marcações', icon: Icons.calendar_month_outlined, selectedIcon: Icons.calendar_month),
+  SidebarItem(path: '/parent/invoices', label: 'Faturas', icon: Icons.receipt_long_outlined, selectedIcon: Icons.receipt_long),
 ];
 
 const _platformItems = [
@@ -508,6 +510,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/parent/menu',
             builder: (_, __) => const FoodMenuScreen(),
+          ),
+          GoRoute(
+            path: '/parent/invoices',
+            builder: (_, __) => const ParentInvoicesScreen(),
           ),
           GoRoute(
             path: '/messages',

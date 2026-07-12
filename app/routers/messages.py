@@ -8,8 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, get_school_id
+from app.core.dependencies import get_current_user, get_school_id, require_teacher
 from app.models.modern import Message, MessageThread, ThreadParticipant
+from app.models.user import User
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
@@ -25,6 +26,12 @@ class ThreadCreate(BaseModel):
 
 class MessagePost(BaseModel):
     body: str
+
+
+class BroadcastCreate(BaseModel):
+    subject: str
+    message: str
+    target: str = "all"  # all, parents, teachers, staff
 
 
 class ThreadResponse(BaseModel):
@@ -211,3 +218,72 @@ async def mark_thread_read(
     participant.last_read_at = datetime.utcnow()
     await db.commit()
     return {"message": "Thread marked as read"}
+
+
+@router.post("/broadcast", response_model=ThreadResponse, status_code=status.HTTP_201_CREATED)
+async def broadcast_message(
+    body: BroadcastCreate,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_teacher),
+):
+    """Send a broadcast message to all users matching the given target role."""
+
+    target = body.target.lower()
+    if target not in ("all", "parents", "teachers", "staff"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="target must be one of: all, parents, teachers, staff",
+        )
+
+    # Resolve target roles to User.role values
+    role_filters: List[str] = []
+    if target in ("all", "parents"):
+        role_filters.append("parent")
+    if target in ("all", "teachers"):
+        role_filters.append("teacher")
+    if target in ("all", "staff"):
+        role_filters.append("staff")
+
+    recipients_result = await db.execute(
+        select(User).where(
+            User.school_id == school_id,
+            User.is_active == True,
+            User.role.in_(role_filters),
+        )
+    )
+    recipient_users = recipients_result.scalars().all()
+
+    # Create broadcast thread
+    thread = MessageThread(
+        school_id=school_id,
+        subject=body.subject,
+        thread_type="broadcast",
+        created_by=current_user.id,
+    )
+    db.add(thread)
+    await db.flush()
+
+    # Add sender as participant
+    participant_ids: set = {current_user.id}
+    for user in recipient_users:
+        participant_ids.add(user.id)
+
+    for uid in participant_ids:
+        db.add(ThreadParticipant(
+            thread_id=thread.id,
+            user_id=uid,
+            school_id=school_id,
+        ))
+
+    # Create the first message
+    db.add(Message(
+        school_id=school_id,
+        thread_id=thread.id,
+        sender_id=current_user.id,
+        body=body.message,
+    ))
+
+    await db.commit()
+    await db.refresh(thread)
+    return thread

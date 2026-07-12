@@ -9,13 +9,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_school_id, require_school_admin
+from app.core.dependencies import get_current_user, get_school_id, require_parent, require_school_admin
 from app.models.finance import Expense, ExpenseCategory, Invoice, Payment, PaymentInvoice
 from app.models.person import Child, Guardian
 from app.schemas.finance import (
     ExpenseCategoryCreate, ExpenseCategoryResponse, ExpenseCategoryUpdate,
     ExpenseCreate, ExpenseResponse, ExpenseUpdate,
     InvoiceBulkCreate, InvoiceCreate, InvoiceResponse, InvoiceUpdate,
+    MulticaixaResponse, ParentInvoiceResponse,
     PaymentCreate, PaymentResponse,
     MonthlyPL, AnnualPL, OutstandingInvoice, CashFlowMonth, RevenuByLevel,
 )
@@ -376,6 +377,123 @@ async def cancel_invoice(
     invoice.status = "cancelled"
     await db.commit()
     return {"message": "Invoice cancelled", "id": str(invoice_id)}
+
+
+# ─── Multicaixa Reference Generation ─────────────────────────────────────────
+
+@router.post("/invoices/{invoice_id}/multicaixa", response_model=MulticaixaResponse)
+async def generate_multicaixa_reference(
+    invoice_id: uuid.UUID,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_school_admin),
+):
+    from app.models.school import School
+
+    result = await db.execute(
+        select(Invoice).where(Invoice.id == invoice_id, Invoice.school_id == school_id)
+    )
+    invoice = result.scalar_one_or_none()
+    if invoice is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    # Return existing reference if already generated
+    if invoice.multicaixa_ref and invoice.multicaixa_entity:
+        return MulticaixaResponse(
+            entidade=invoice.multicaixa_entity,
+            referencia=invoice.multicaixa_ref,
+            montante=str(invoice.total_amount),
+        )
+
+    # Determine entidade from school NIF (last 5 digits) or fallback
+    school_result = await db.execute(select(School).where(School.id == school_id))  # type: ignore[arg-type]
+    school = school_result.scalar_one_or_none()
+    nif = (school.nif or "") if school else ""
+    # Strip non-digits and take last 5, fallback to "11111"
+    nif_digits = "".join(c for c in nif if c.isdigit())
+    entidade = nif_digits[-5:] if len(nif_digits) >= 5 else "11111"
+
+    # Generate sequential reference: count of all invoices for this school up to and including this one
+    count_result = await db.execute(
+        select(func.count(Invoice.id)).where(
+            Invoice.school_id == school_id,
+            Invoice.created_at <= invoice.created_at,
+        )
+    )
+    seq_num = count_result.scalar() or 1
+    referencia = str(seq_num).zfill(9)
+
+    invoice.multicaixa_entity = entidade
+    invoice.multicaixa_ref = referencia
+    await db.commit()
+    await db.refresh(invoice)
+
+    return MulticaixaResponse(
+        entidade=entidade,
+        referencia=referencia,
+        montante=str(invoice.total_amount),
+    )
+
+
+# ─── Parent Invoice Portal ────────────────────────────────────────────────────
+
+@router.get("/parent/invoices", response_model=List[ParentInvoiceResponse])
+async def list_parent_invoices(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_parent),
+):
+    from app.models.person import ChildGuardian
+
+    guardian_id = getattr(current_user, "guardian_id", None)
+    if guardian_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No guardian record linked to this user account",
+        )
+
+    # Get all child_ids linked to this guardian
+    cg_result = await db.execute(
+        select(ChildGuardian.child_id).where(ChildGuardian.guardian_id == guardian_id)
+    )
+    child_ids = [row[0] for row in cg_result.all()]
+
+    if not child_ids:
+        return []
+
+    # Fetch all invoices for those children
+    inv_result = await db.execute(
+        select(Invoice)
+        .where(Invoice.child_id.in_(child_ids))
+        .order_by(Invoice.reference_month.desc())
+    )
+    invoices = inv_result.scalars().all()
+
+    # Build child name map
+    child_result = await db.execute(
+        select(Child.id, Child.first_name, Child.last_name)
+        .where(Child.id.in_(child_ids))
+    )
+    child_name_map = {row.id: f"{row.first_name} {row.last_name}" for row in child_result}
+
+    output: List[ParentInvoiceResponse] = []
+    for inv in invoices:
+        amount_paid = await get_invoice_amount_paid(db, inv.id)
+        output.append(
+            ParentInvoiceResponse(
+                id=inv.id,
+                child_id=inv.child_id,
+                child_name=child_name_map.get(inv.child_id, "Desconhecido"),
+                reference_month=inv.reference_month,
+                total_amount=inv.total_amount,
+                status=inv.status,
+                due_date=inv.due_date,
+                multicaixa_entity=inv.multicaixa_entity,
+                multicaixa_ref=inv.multicaixa_ref,
+                amount_paid=amount_paid,
+                balance=inv.total_amount - amount_paid,
+            )
+        )
+    return output
 
 
 # ─── Payments ─────────────────────────────────────────────────────────────────

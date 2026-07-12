@@ -23,6 +23,7 @@ dependencies:
   timeago: ^3.7.0
   badges: ^3.1.2
   url_launcher: ^6.3.0
+  local_auth: ^2.3.0
 
 dev_dependencies:
   flutter_test:

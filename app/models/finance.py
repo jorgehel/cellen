@@ -95,6 +95,10 @@ class Invoice(Base):
     due_date: Mapped[Optional[date]] = mapped_column(Date)
     notes: Mapped[Optional[str]] = mapped_column(Text)
 
+    # Multicaixa payment fields
+    multicaixa_entity: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    multicaixa_ref: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+
     # AGT compliance fields
     document_type: Mapped[str] = mapped_column(String(5), nullable=False, default="FT")
     series_year: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
