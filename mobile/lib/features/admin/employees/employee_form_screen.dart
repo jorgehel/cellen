@@ -114,14 +114,9 @@ class _EmployeeFormScreenState extends ConsumerState<EmployeeFormScreen> {
       body['hire_date'] =
           '${_hireDate!.year.toString().padLeft(4, '0')}-${_hireDate!.month.toString().padLeft(2, '0')}-${_hireDate!.day.toString().padLeft(2, '0')}';
     }
-    // Only include user account fields when creating
     if (!isEditing) {
-      if (_usernameCtrl.text.trim().isNotEmpty) {
-        body['username'] = _usernameCtrl.text.trim();
-      }
-      if (_passwordCtrl.text.isNotEmpty) {
-        body['password'] = _passwordCtrl.text;
-      }
+      body['username'] = _usernameCtrl.text.trim();
+      body['password'] = _passwordCtrl.text;
     }
 
     try {
@@ -301,19 +296,27 @@ class _EmployeeFormScreenState extends ConsumerState<EmployeeFormScreen> {
                 ),
               ),
 
-              // User account (only when creating)
+              // User account — required when creating
               if (!isEditing) ...[
                 const SizedBox(height: 24),
-                _sectionHeader(context, 'Conta de Acesso (opcional)'),
+                _sectionHeader(context, 'Conta de Acesso'),
+                const SizedBox(height: 4),
+                Text(
+                  'Credenciais para entrar na plataforma',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
                 const SizedBox(height: 12),
 
                 TextFormField(
                   controller: _usernameCtrl,
                   textInputAction: TextInputAction.next,
                   decoration: const InputDecoration(
-                    labelText: 'Nome de Utilizador',
+                    labelText: 'Nome de Utilizador *',
                     prefixIcon: Icon(Icons.account_circle),
                   ),
+                  validator: (v) =>
+                      v == null || v.trim().isEmpty ? 'Campo obrigatório' : null,
                 ),
                 const SizedBox(height: 12),
 
@@ -322,7 +325,7 @@ class _EmployeeFormScreenState extends ConsumerState<EmployeeFormScreen> {
                   obscureText: _obscurePassword,
                   textInputAction: TextInputAction.done,
                   decoration: InputDecoration(
-                    labelText: 'Palavra-passe',
+                    labelText: 'Palavra-passe *',
                     prefixIcon: const Icon(Icons.lock),
                     suffixIcon: IconButton(
                       icon: Icon(_obscurePassword
@@ -332,6 +335,9 @@ class _EmployeeFormScreenState extends ConsumerState<EmployeeFormScreen> {
                           () => _obscurePassword = !_obscurePassword),
                     ),
                   ),
+                  validator: (v) => v == null || v.length < 6
+                      ? 'Mínimo 6 caracteres'
+                      : null,
                 ),
               ],
 

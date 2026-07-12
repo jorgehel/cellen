@@ -32,7 +32,8 @@ class GuardianBase(BaseModel):
 
 
 class GuardianCreate(GuardianBase):
-    pass
+    username: str
+    password: str
 
 
 class GuardianUpdate(BaseModel):

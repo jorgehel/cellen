@@ -2,17 +2,24 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_school_id, require_school_admin, require_teacher
+from app.core.security import hash_password
 from app.models.person import Child, ChildGuardian, Guardian
+from app.models.user import User
 from app.schemas.guardian import (
     ChildGuardianLink, ChildGuardianResponse, GuardianCreate, GuardianResponse, GuardianUpdate
 )
 
 router = APIRouter(prefix="/guardians", tags=["Guardians"])
+
+
+class SetPasswordBody(BaseModel):
+    password: str
 
 
 @router.get("", response_model=list[GuardianResponse])
@@ -44,8 +51,26 @@ async def create_guardian(
     db: AsyncSession = Depends(get_db),
     _=Depends(require_school_admin),
 ):
-    guardian = Guardian(school_id=school_id, **body.model_dump())
+    # Check username not already taken in this school
+    existing = await db.execute(
+        select(User).where(User.school_id == school_id, User.username == body.username)
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Nome de utilizador já existe nesta escola")
+
+    guardian_data = body.model_dump(exclude={"username", "password"})
+    guardian = Guardian(school_id=school_id, **guardian_data)
     db.add(guardian)
+    await db.flush()  # get guardian.id before creating user
+
+    user = User(
+        school_id=school_id,
+        username=body.username,
+        password_hash=hash_password(body.password),
+        role="parent",
+        guardian_id=guardian.id,
+    )
+    db.add(user)
     await db.commit()
     await db.refresh(guardian)
     return guardian
@@ -88,6 +113,25 @@ async def update_guardian(
     await db.commit()
     await db.refresh(guardian)
     return guardian
+
+
+@router.patch("/{guardian_id}/set-password")
+async def set_guardian_password(
+    guardian_id: uuid.UUID,
+    body: SetPasswordBody,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_school_admin),
+):
+    result = await db.execute(
+        select(User).where(User.guardian_id == guardian_id, User.school_id == school_id)
+    )
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="Conta de acesso não encontrada")
+    user.password_hash = hash_password(body.password)
+    await db.commit()
+    return {"message": "Senha actualizada"}
 
 
 @router.delete("/{guardian_id}")

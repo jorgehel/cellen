@@ -2,16 +2,30 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_school_id, require_school_admin, require_teacher
+from app.core.security import hash_password
 from app.models.employee import Employee
+from app.models.user import User
 from app.schemas.employee import EmployeeCreate, EmployeeResponse, EmployeeUpdate
 from app.services.storage import save_upload
 
 router = APIRouter(prefix="/employees", tags=["Employees"])
+
+
+class SetPasswordBody(BaseModel):
+    password: str
+
+
+_EMPLOYEE_TYPE_TO_ROLE = {
+    "teacher": "teacher",
+    "staff": "staff",
+    "admin": "school_admin",
+}
 
 
 @router.get("", response_model=list[EmployeeResponse])
@@ -41,8 +55,27 @@ async def create_employee(
     db: AsyncSession = Depends(get_db),
     _=Depends(require_school_admin),
 ):
-    employee = Employee(school_id=school_id, **body.model_dump())
+    # Check username not already taken in this school
+    existing = await db.execute(
+        select(User).where(User.school_id == school_id, User.username == body.username)
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Nome de utilizador já existe nesta escola")
+
+    employee_data = body.model_dump(exclude={"username", "password"})
+    employee = Employee(school_id=school_id, **employee_data)
     db.add(employee)
+    await db.flush()  # get employee.id before creating user
+
+    role = _EMPLOYEE_TYPE_TO_ROLE.get(body.employee_type, "staff")
+    user = User(
+        school_id=school_id,
+        username=body.username,
+        password_hash=hash_password(body.password),
+        role=role,
+        employee_id=employee.id,
+    )
+    db.add(user)
     await db.commit()
     await db.refresh(employee)
     return employee
@@ -104,6 +137,25 @@ async def delete_employee(
     employee.status = "inactive"
     await db.commit()
     return {"message": "Employee deactivated"}
+
+
+@router.patch("/{employee_id}/set-password")
+async def set_employee_password(
+    employee_id: uuid.UUID,
+    body: "SetPasswordBody",
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_school_admin),
+):
+    result = await db.execute(
+        select(User).where(User.employee_id == employee_id, User.school_id == school_id)
+    )
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="Conta de acesso não encontrada")
+    user.password_hash = hash_password(body.password)
+    await db.commit()
+    return {"message": "Senha actualizada"}
 
 
 @router.post("/{employee_id}/photo")

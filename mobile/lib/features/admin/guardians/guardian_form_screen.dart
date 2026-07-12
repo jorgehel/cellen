@@ -33,8 +33,11 @@ class _GuardianFormScreenState extends ConsumerState<GuardianFormScreen> {
   final _cityCtrl = TextEditingController();
   final _municipioCtrl = TextEditingController();
   final _bairroCtrl = TextEditingController();
+  final _usernameCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
   String? _sex;
   String? _civilState;
+  bool _obscurePassword = true;
 
   bool get _isEdit => widget.guardianId != null;
 
@@ -79,7 +82,7 @@ class _GuardianFormScreenState extends ConsumerState<GuardianFormScreen> {
       _firstNameCtrl, _middleNameCtrl, _lastNameCtrl, _professionCtrl,
       _qualificationsCtrl, _idCardCtrl, _mobileFirstCtrl, _mobileSecondCtrl,
       _emailCtrl, _streetCtrl, _houseNumCtrl, _cityCtrl, _municipioCtrl,
-      _bairroCtrl,
+      _bairroCtrl, _usernameCtrl, _passwordCtrl,
     ]) {
       c.dispose();
     }
@@ -128,6 +131,8 @@ class _GuardianFormScreenState extends ConsumerState<GuardianFormScreen> {
       if (_isEdit) {
         await api.patch('/guardians/${widget.guardianId}', data: body);
       } else {
+        body['username'] = _usernameCtrl.text.trim();
+        body['password'] = _passwordCtrl.text;
         await api.post('/guardians', data: body);
       }
 
@@ -259,6 +264,47 @@ class _GuardianFormScreenState extends ConsumerState<GuardianFormScreen> {
             _field(_municipioCtrl, 'Município'),
             const SizedBox(height: 12),
             _field(_cityCtrl, 'Cidade / Província'),
+
+            if (!_isEdit) ...[
+              const SizedBox(height: 24),
+              _SectionHeader(title: 'Conta de Acesso'),
+              const SizedBox(height: 4),
+              Text(
+                'Credenciais para o encarregado entrar na plataforma',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _usernameCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Nome de Utilizador *',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.account_circle),
+                ),
+                validator: (v) =>
+                    v == null || v.trim().isEmpty ? 'Campo obrigatório' : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _passwordCtrl,
+                obscureText: _obscurePassword,
+                decoration: InputDecoration(
+                  labelText: 'Palavra-passe *',
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.lock),
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscurePassword
+                        ? Icons.visibility
+                        : Icons.visibility_off),
+                    onPressed: () =>
+                        setState(() => _obscurePassword = !_obscurePassword),
+                  ),
+                ),
+                validator: (v) =>
+                    v == null || v.length < 6 ? 'Mínimo 6 caracteres' : null,
+              ),
+            ],
 
             const SizedBox(height: 32),
           ],
