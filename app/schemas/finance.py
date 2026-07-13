@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -66,12 +66,35 @@ class ExpenseResponse(ExpenseBase):
     created_at: datetime
     updated_at: datetime
     category_name: Optional[str] = None
+    is_voided: bool = False
+    void_reason: Optional[str] = None
+
+
+# Invoice line item
+class InvoiceLineCreate(BaseModel):
+    billing_item_id: Optional[uuid.UUID] = None
+    description: Optional[str] = None
+    quantity: int = 1
+    unit_price: DecimalFloat
+    iva_rate: Optional[DecimalFloat] = None
+    iva_exemption_reason: Optional[str] = None
+
+
+class InvoiceLineResponse(BaseModel):
+    billing_item_id: Optional[uuid.UUID] = None
+    description: Optional[str] = None
+    quantity: int = 1
+    unit_price: DecimalFloat
+    iva_rate: DecimalFloat = Decimal("0")
+    iva_exemption_reason: Optional[str] = None
+    line_total: DecimalFloat = Decimal("0")
 
 
 # Invoice
 class InvoiceBase(BaseModel):
     child_id: uuid.UUID
-    issued_by: uuid.UUID
+    issued_by: Optional[uuid.UUID] = None
+    billing_guardian_id: Optional[uuid.UUID] = None
     school_year_id: Optional[uuid.UUID] = None
     invoice_date: Optional[date] = None
     reference_month: date
@@ -83,12 +106,12 @@ class InvoiceBase(BaseModel):
 
 
 class InvoiceCreate(InvoiceBase):
-    pass
+    lines: List[InvoiceLineCreate] = []
 
 
 class InvoiceBulkCreate(BaseModel):
-    school_year_id: uuid.UUID
-    issued_by: uuid.UUID
+    school_year_id: Optional[uuid.UUID] = None
+    issued_by: Optional[uuid.UUID] = None
     reference_month: date
     tuition_amount: DecimalFloat
     other_fees: DecimalFloat = Decimal("0")
@@ -114,6 +137,10 @@ class InvoiceResponse(InvoiceBase):
     balance: DecimalFloat = Decimal("0")
     multicaixa_entity: Optional[str] = None
     multicaixa_ref: Optional[str] = None
+    full_document_number: Optional[str] = None
+    series_number: Optional[int] = None
+    hash_code: Optional[str] = None
+    lines: Optional[List[Any]] = None
     created_at: datetime
     updated_at: datetime
 
@@ -157,6 +184,7 @@ class PaymentBase(BaseModel):
 
 class PaymentCreate(PaymentBase):
     invoice_allocations: List[PaymentAllocation] = []
+    invoice_ids: Optional[List[uuid.UUID]] = None  # explicit targeting (bypasses oldest-first)
 
 
 class PaymentResponse(PaymentBase):
@@ -164,6 +192,7 @@ class PaymentResponse(PaymentBase):
     id: uuid.UUID
     school_id: uuid.UUID
     settled_invoice_ids: List[uuid.UUID] = []
+    status: str = "normal"
     created_at: datetime
 
 

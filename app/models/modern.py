@@ -40,6 +40,31 @@ class Attendance(Base):
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class AttendanceLog(Base):
+    """Individual check-in / check-out event (multiple per day per child)."""
+    __tablename__ = "attendance_logs"
+    __table_args__ = (
+        Index("ix_attendance_logs_school_id", "school_id"),
+        Index("ix_attendance_logs_child_date", "school_id", "child_id", "attendance_date"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    school_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("schools.id", ondelete="RESTRICT"), nullable=False
+    )
+    child_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("children.id", ondelete="RESTRICT"), nullable=False
+    )
+    recorded_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="RESTRICT"), nullable=False
+    )
+    attendance_date: Mapped[date] = mapped_column(Date, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(20), nullable=False)  # check_in | check_out
+    event_time: Mapped[time] = mapped_column(Time, nullable=False)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class MessageThread(Base):
     __tablename__ = "message_threads"
     __table_args__ = (
@@ -113,7 +138,7 @@ class Photo(Base):
         UUID(as_uuid=True), ForeignKey("schools.id", ondelete="RESTRICT"), nullable=False
     )
     uploaded_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="RESTRICT"), nullable=False
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
     turma_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("turmas.id", ondelete="SET NULL"), nullable=True
@@ -253,8 +278,8 @@ class Receipt(Base):
     nif_cliente: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     hash_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    issued_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="RESTRICT"), nullable=False
+    issued_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="RESTRICT"), nullable=True
     )
     issued_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -274,8 +299,8 @@ class CreditNote(Base):
     invoice_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("invoices.id", ondelete="RESTRICT"), nullable=False
     )
-    issued_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="RESTRICT"), nullable=False
+    issued_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="RESTRICT"), nullable=True
     )
     series_year: Mapped[int] = mapped_column(Integer, nullable=False)
     series_number: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -307,10 +332,14 @@ class Contract(Base):
     guardian_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("guardians.id", ondelete="SET NULL"), nullable=True
     )
-    service_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    billing_item_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("billing_items.id", ondelete="SET NULL"), nullable=True
+    )
+    service_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
-    iva_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, default=Decimal("14.00"))
+    unit_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=Decimal("0"))
+    iva_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, default=Decimal("0"))
     billing_cycle: Mapped[str] = mapped_column(String(20), nullable=False, default="monthly")
     day_of_month: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -366,7 +395,7 @@ class DocumentLibrary(Base):
         UUID(as_uuid=True), ForeignKey("schools.id", ondelete="RESTRICT"), nullable=False
     )
     uploaded_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="RESTRICT"), nullable=False
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

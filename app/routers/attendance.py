@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime, time
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +14,7 @@ from app.core.dependencies import (
     require_school_admin,
     require_teacher,
 )
-from app.models.modern import Attendance
+from app.models.modern import Attendance, AttendanceLog
 from app.models.person import Child
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
@@ -34,6 +34,7 @@ class CheckOutBody(BaseModel):
 class BulkAttendanceRecord(BaseModel):
     child_id: uuid.UUID
     status: str  # present / absent / late / excused
+    notes: Optional[str] = None
 
 
 class BulkAttendanceBody(BaseModel):
@@ -78,11 +79,25 @@ class AttendanceRecord(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AttendanceLogEntry(BaseModel):
+    id: uuid.UUID
+    child_id: uuid.UUID
+    attendance_date: date
+    event_type: str  # check_in | check_out
+    event_time: time
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
 class ChildMonthlySummary(BaseModel):
     child_id: uuid.UUID
     first_name: str
     last_name: str
     present: int
+    present_days: int = 0  # alias for present (spec compliance)
+    days_present: int = 0  # additional alias
     absent: int
     late: int
     excused: int
@@ -207,12 +222,25 @@ async def checkin(
     if employee_id is None:
         raise HTTPException(status_code=400, detail="Current user has no associated employee record")
 
-    record = await _get_or_create_attendance(db, school_id, body.child_id, date.today(), employee_id)
-    record.check_in_time = datetime.now().time()
+    now = datetime.now()
+    today = date.today()
+    record = await _get_or_create_attendance(db, school_id, body.child_id, today, employee_id)
+    record.check_in_time = now.time()
     record.status = "present"
     if body.notes:
         record.notes = body.notes
     record.recorded_by = employee_id
+
+    log_entry = AttendanceLog(
+        school_id=school_id,
+        child_id=body.child_id,
+        recorded_by=employee_id,
+        attendance_date=today,
+        event_type="check_in",
+        event_time=now.time(),
+        notes=body.notes,
+    )
+    db.add(log_entry)
 
     await db.commit()
     await db.refresh(record)
@@ -236,9 +264,21 @@ async def checkout(
     if employee_id is None:
         raise HTTPException(status_code=400, detail="Current user has no associated employee record")
 
-    record = await _get_or_create_attendance(db, school_id, body.child_id, date.today(), employee_id)
-    record.check_out_time = datetime.now().time()
+    now = datetime.now()
+    today = date.today()
+    record = await _get_or_create_attendance(db, school_id, body.child_id, today, employee_id)
+    record.check_out_time = now.time()
     record.recorded_by = employee_id
+
+    log_entry = AttendanceLog(
+        school_id=school_id,
+        child_id=body.child_id,
+        recorded_by=employee_id,
+        attendance_date=today,
+        event_type="check_out",
+        event_time=now.time(),
+    )
+    db.add(log_entry)
 
     await db.commit()
     await db.refresh(record)
@@ -269,6 +309,8 @@ async def bulk_attendance(
         if existing:
             existing.status = rec.status
             existing.recorded_by = employee_id
+            if rec.notes is not None:
+                existing.notes = rec.notes
         else:
             att = Attendance(
                 school_id=school_id,
@@ -276,6 +318,7 @@ async def bulk_attendance(
                 recorded_by=employee_id,
                 attendance_date=body.date,
                 status=rec.status,
+                notes=rec.notes,
             )
             db.add(att)
         upserted += 1
@@ -284,9 +327,38 @@ async def bulk_attendance(
     return {"upserted": upserted, "date": body.date}
 
 
+@router.get("/child/{child_id}/log", response_model=List[AttendanceLogEntry])
+async def get_child_attendance_log(
+    child_id: uuid.UUID,
+    date_filter: Optional[date] = Query(default=None, alias="date"),
+    skip: int = 0,
+    limit: int = 100,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    child_result = await db.execute(
+        select(Child).where(Child.id == child_id, Child.school_id == school_id)
+    )
+    if child_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Child not found")
+
+    query = select(AttendanceLog).where(
+        AttendanceLog.school_id == school_id,
+        AttendanceLog.child_id == child_id,
+    )
+    if date_filter:
+        query = query.where(AttendanceLog.attendance_date == date_filter)
+    query = query.order_by(AttendanceLog.attendance_date.desc(), AttendanceLog.event_time.asc())
+    query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
 @router.get("/child/{child_id}", response_model=List[AttendanceRecord])
 async def get_child_attendance(
     child_id: uuid.UUID,
+    date_filter: Optional[date] = Query(default=None, alias="date"),
     skip: int = 0,
     limit: int = 50,
     school_id: uuid.UUID = Depends(get_school_id),
@@ -299,12 +371,13 @@ async def get_child_attendance(
     if child_result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Child not found")
 
+    query = select(Attendance).where(
+        Attendance.school_id == school_id, Attendance.child_id == child_id
+    )
+    if date_filter:
+        query = query.where(Attendance.attendance_date == date_filter)
     result = await db.execute(
-        select(Attendance)
-        .where(Attendance.school_id == school_id, Attendance.child_id == child_id)
-        .order_by(Attendance.attendance_date.desc())
-        .offset(skip)
-        .limit(limit)
+        query.order_by(Attendance.attendance_date.desc()).offset(skip).limit(limit)
     )
     return result.scalars().all()
 
@@ -364,6 +437,8 @@ async def attendance_summary(
             first_name=child.first_name,
             last_name=child.last_name,
             present=stats["present"],
+            present_days=stats["present"],
+            days_present=stats["present"],
             absent=stats["absent"],
             late=stats["late"],
             excused=stats["excused"],

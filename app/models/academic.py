@@ -68,8 +68,9 @@ class Activity(Base):
 class Schedule(Base):
     __tablename__ = "schedules"
     __table_args__ = (
-        UniqueConstraint("school_id", "turma_id", "school_year_id", name="uq_schedule_turma_year"),
+        # Removed unique constraint: multiple schedules per turma+year allowed (temporal validity)
         Index("ix_schedules_school_id", "school_id"),
+        Index("ix_schedules_turma_year", "school_id", "turma_id", "school_year_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -82,6 +83,8 @@ class Schedule(Base):
     school_year_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("school_years.id", ondelete="RESTRICT"), nullable=False
     )
+    effective_from: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    effective_to: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -126,8 +129,8 @@ class ScheduleSlot(Base):
     )
     day_of_week: Mapped[int] = mapped_column(Integer, nullable=False)  # 0=Sun..6=Sat
     slot_time: Mapped[time] = mapped_column(Time, nullable=False)
-    activity_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("activities.id", ondelete="RESTRICT"), nullable=False
+    activity_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("activities.id", ondelete="RESTRICT"), nullable=True
     )
 
     schedule = relationship("Schedule", back_populates="slots")

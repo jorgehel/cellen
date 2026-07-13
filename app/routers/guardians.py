@@ -73,7 +73,9 @@ async def create_guardian(
     db.add(user)
     await db.commit()
     await db.refresh(guardian)
-    return guardian
+    response = GuardianResponse.model_validate(guardian)
+    response.username = body.username
+    return response
 
 
 @router.get("/{guardian_id}", response_model=GuardianResponse)

@@ -226,6 +226,21 @@ async def create_schedule(
     db: AsyncSession = Depends(get_db),
     _=Depends(require_school_admin),
 ):
+    from datetime import timedelta
+
+    # Auto-close any previous open schedule for same turma+year
+    if body.effective_from:
+        prev_result = await db.execute(
+            select(Schedule).where(
+                Schedule.school_id == school_id,
+                Schedule.turma_id == body.turma_id,
+                Schedule.school_year_id == body.school_year_id,
+                Schedule.effective_to.is_(None),
+            )
+        )
+        for prev in prev_result.scalars().all():
+            prev.effective_to = body.effective_from - timedelta(days=1)
+
     schedule = Schedule(school_id=school_id, **body.model_dump())
     db.add(schedule)
     await db.commit()
@@ -313,12 +328,28 @@ async def add_schedule_slot(
     db: AsyncSession = Depends(get_db),
     _=Depends(require_school_admin),
 ):
-    # Verify schedule
+    from sqlalchemy.exc import IntegrityError
+
+    # Verify schedule exists
     sched_result = await db.execute(
         select(Schedule).where(Schedule.id == schedule_id, Schedule.school_id == school_id)
     )
-    if sched_result.scalar_one_or_none() is None:
+    schedule = sched_result.scalar_one_or_none()
+    if schedule is None:
         raise HTTPException(status_code=404, detail="Schedule not found")
+
+    # Closed schedule (has effective_to set) is read-only
+    if schedule.effective_to is not None:
+        raise HTTPException(status_code=409, detail="Cannot modify a closed schedule (effective_to is set)")
+
+    # Validate activity_id if provided
+    if body.activity_id:
+        from app.models.academic import Activity
+        act_result = await db.execute(
+            select(Activity).where(Activity.id == body.activity_id, Activity.school_id == school_id)
+        )
+        if act_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=422, detail=f"Activity {body.activity_id} not found in this school")
 
     slot = ScheduleSlot(
         school_id=school_id,
@@ -326,7 +357,11 @@ async def add_schedule_slot(
         **body.model_dump(),
     )
     db.add(slot)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=422, detail=f"Slot creation failed: {exc.orig}")
     await db.refresh(slot)
     return slot
 
@@ -489,9 +524,30 @@ async def create_enrollment(
     db: AsyncSession = Depends(get_db),
     _=Depends(require_school_admin),
 ):
+    from sqlalchemy.exc import IntegrityError
+    from app.models.person import ChildGuardian
+
+    # Spec 5.1: active enrollment requires a primary-contact guardian
+    if body.status == "active":
+        grd_result = await db.execute(
+            select(ChildGuardian.guardian_id).where(
+                ChildGuardian.child_id == body.child_id,
+                ChildGuardian.is_primary_contact == True,
+            )
+        )
+        if grd_result.scalar_one_or_none() is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Active enrollment requires the child to have a primary-contact guardian",
+            )
+
     enrollment = Enrollment(school_id=school_id, **body.model_dump())
     db.add(enrollment)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Child already has an active enrollment for this school year")
     await db.refresh(enrollment)
     return enrollment
 
@@ -522,6 +578,8 @@ async def update_enrollment(
     db: AsyncSession = Depends(get_db),
     _=Depends(require_school_admin),
 ):
+    from app.models.person import ChildGuardian
+
     result = await db.execute(
         select(Enrollment).where(
             Enrollment.id == enrollment_id, Enrollment.school_id == school_id
@@ -530,6 +588,22 @@ async def update_enrollment(
     enrollment = result.scalar_one_or_none()
     if enrollment is None:
         raise HTTPException(status_code=404, detail="Enrollment not found")
+
+    # Spec 5.1: activating enrollment requires primary-contact guardian
+    new_status = body.status if body.status is not None else enrollment.status
+    if new_status == "active" and enrollment.status != "active":
+        grd_result = await db.execute(
+            select(ChildGuardian.guardian_id).where(
+                ChildGuardian.child_id == enrollment.child_id,
+                ChildGuardian.is_primary_contact == True,
+            )
+        )
+        if grd_result.scalar_one_or_none() is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Activating enrollment requires the child to have a primary-contact guardian",
+            )
+
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(enrollment, field, value)
     await db.commit()

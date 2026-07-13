@@ -183,9 +183,10 @@ async def update_expense(
     return expense
 
 
-@router.delete("/expenses/{expense_id}")
-async def delete_expense(
+@router.post("/expenses/{expense_id}/void", response_model=ExpenseResponse)
+async def void_expense(
     expense_id: uuid.UUID,
+    body: dict,
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
     _=Depends(require_school_admin),
@@ -196,9 +197,21 @@ async def delete_expense(
     expense = result.scalar_one_or_none()
     if expense is None:
         raise HTTPException(status_code=404, detail="Expense not found")
-    await db.delete(expense)
+    if expense.is_voided:
+        raise HTTPException(status_code=400, detail="Expense is already voided")
+    expense.is_voided = True
+    expense.void_reason = body.get("void_reason") or body.get("reason") or "Voided"
     await db.commit()
-    return {"message": "Expense deleted"}
+    await db.refresh(expense)
+    # Avoid lazy-load: query category separately
+    cat_result = await db.execute(
+        select(ExpenseCategory).where(ExpenseCategory.id == expense.category_id)
+    )
+    cat = cat_result.scalar_one_or_none()
+    response_data = ExpenseResponse.model_validate(expense)
+    if cat:
+        response_data.category_name = cat.name
+    return response_data
 
 
 @router.post("/expenses/{expense_id}/receipt")
@@ -264,17 +277,49 @@ async def create_invoice(
     db: AsyncSession = Depends(get_db),
     _=Depends(require_school_admin),
 ):
+    from app.models.billing_item import BillingItem
     from app.models.school import School
     from app.utils.agt import compute_hash, generate_document_number, get_last_document_hash, get_next_series_number
 
-    data = body.model_dump()
+    data = body.model_dump(exclude={"lines"})
+    lines_input = body.lines or []
+
     total = (data.get("tuition_amount") or Decimal("0")) + (data.get("other_fees") or Decimal("0"))
+
+    # billing_guardian_id is required per spec when no amounts and no lines (prevent zero-value invoice without guardian)
+    if body.billing_guardian_id is None and not lines_input and total == Decimal("0"):
+        raise HTTPException(status_code=422, detail="billing_guardian_id is required when no lines or amounts are provided")
+
+    # Build line items with enrichment from billing item
+    lines_out = []
+    for line in lines_input:
+        # Use mode='json' so Decimal values are serialized as float (JSONB-safe)
+        line_dict = line.model_dump(mode="json") if hasattr(line, "model_dump") else dict(line)
+        bi_id = line_dict.get("billing_item_id")
+        if bi_id:
+            bi_result = await db.execute(
+                select(BillingItem).where(BillingItem.id == bi_id, BillingItem.school_id == school_id)
+            )
+            bi = bi_result.scalar_one_or_none()
+            if bi:
+                if line_dict.get("iva_rate") is None:
+                    line_dict["iva_rate"] = float(bi.iva_rate)
+                if not line_dict.get("iva_exemption_reason"):
+                    line_dict["iva_exemption_reason"] = bi.iva_exemption_reason
+                if not line_dict.get("description"):
+                    line_dict["description"] = bi.name
+                line_dict["billing_item_id"] = str(bi_id)
+        unit = Decimal(str(line_dict.get("unit_price", 0)))
+        qty = line_dict.get("quantity", 1)
+        line_dict["line_total"] = float(unit * qty)
+        lines_out.append(line_dict)
 
     school_result = await db.execute(select(School).where(School.id == school_id))
     school = school_result.scalar_one_or_none()
     nif_emitter = (school.nif or "") if school else ""
 
     today = data.get("invoice_date") or date.today()
+    data["invoice_date"] = today  # ensure non-null — bypasses column default when explicitly None
     ft_number = await get_next_series_number(db, school_id, "FT", today.year)
     ft_doc_number = generate_document_number("FT", today.year, ft_number)
     prev_hash = await get_last_document_hash(db, school_id, Invoice)
@@ -288,6 +333,7 @@ async def create_invoice(
         full_document_number=ft_doc_number,
         hash_code=ft_hash,
         previous_hash=prev_hash,
+        lines=lines_out if lines_out else None,
         **data,
     )
     db.add(invoice)
@@ -296,14 +342,14 @@ async def create_invoice(
     return await _enrich_invoice(db, invoice)
 
 
-@router.post("/invoices/bulk", response_model=list[InvoiceResponse], status_code=status.HTTP_201_CREATED)
+@router.post("/invoices/bulk", status_code=status.HTTP_201_CREATED)
 async def bulk_create_invoices(
     body: InvoiceBulkCreate,
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
     _=Depends(require_school_admin),
 ):
-    from app.models.academic import Enrollment
+    from app.models.person import ChildGuardian
     from app.models.school import School
     from app.utils.agt import compute_hash, generate_document_number, get_last_document_hash, get_next_series_number
 
@@ -314,29 +360,40 @@ async def bulk_create_invoices(
     today = date.today()
     total_amount = body.tuition_amount + body.other_fees
 
-    # Get all active children in this school year
+    # Get all active children in this school
     children_result = await db.execute(
-        select(Child.id).join(
-            Enrollment, Enrollment.child_id == Child.id
-        ).where(
-            Child.school_id == school_id,
-            Child.is_active == True,
-            Enrollment.school_id == school_id,
-            Enrollment.school_year_id == body.school_year_id,
-            Enrollment.status == "active",
-        ).distinct()
+        select(Child).where(Child.school_id == school_id, Child.is_active == True)
     )
-    child_ids = [row[0] for row in children_result.all()]
+    all_children = children_result.scalars().all()
 
-    # Seed hash chain from last existing invoice
     last_hash = await get_last_document_hash(db, school_id, Invoice)
 
     invoices = []
-    for child_id in child_ids:
+    warnings = []
+
+    for child in all_children:
+        # Check for primary contact guardian
+        grd_result = await db.execute(
+            select(ChildGuardian.guardian_id).where(
+                ChildGuardian.child_id == child.id,
+                ChildGuardian.is_primary_contact == True,
+            )
+        )
+        primary_guardian_id = grd_result.scalar_one_or_none()
+
+        if primary_guardian_id is None:
+            warnings.append({
+                "child_id": str(child.id),
+                "child_name": f"{child.first_name} {child.last_name}",
+                "reason": "No primary contact guardian",
+            })
+            continue
+
+        # Skip if already invoiced this month
         existing = await db.execute(
             select(Invoice).where(
                 Invoice.school_id == school_id,
-                Invoice.child_id == child_id,
+                Invoice.child_id == child.id,
                 Invoice.reference_month == body.reference_month,
             )
         )
@@ -345,13 +402,14 @@ async def bulk_create_invoices(
 
         ft_number = await get_next_series_number(db, school_id, "FT", today.year)
         ft_doc_number = generate_document_number("FT", today.year, ft_number)
-        prev_hash = last_hash  # capture before advancing the chain
+        prev_hash = last_hash
         ft_hash = compute_hash(ft_doc_number, today, nif_emitter, "Consumidor Final", float(total_amount), prev_hash)
-        last_hash = ft_hash  # advance chain for next invoice
+        last_hash = ft_hash
 
         invoice = Invoice(
             school_id=school_id,
-            child_id=child_id,
+            child_id=child.id,
+            billing_guardian_id=primary_guardian_id,
             issued_by=body.issued_by,
             school_year_id=body.school_year_id,
             reference_month=body.reference_month,
@@ -373,7 +431,8 @@ async def bulk_create_invoices(
     for inv in invoices:
         await db.refresh(inv)
 
-    return [await _enrich_invoice(db, inv) for inv in invoices]
+    enriched = [await _enrich_invoice(db, inv) for inv in invoices]
+    return {"invoices": [inv.model_dump() for inv in enriched], "warnings": warnings}
 
 
 @router.get("/invoices/{invoice_id}", response_model=InvoiceResponse)
@@ -597,17 +656,71 @@ async def create_payment(
     db: AsyncSession = Depends(get_db),
     _=Depends(require_school_admin),
 ):
-    # Validate: total == sum of allocations
-    if body.invoice_allocations:
-        total_allocated = sum(a.amount_applied for a in body.invoice_allocations)
-        if total_allocated != body.amount:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Payment amount ({body.amount}) must equal sum of allocations ({total_allocated})",
-            )
+    from app.schemas.finance import PaymentAllocation as _PA
 
-    allocations = body.invoice_allocations
-    payment_data = body.model_dump(exclude={"invoice_allocations"})
+    # Explicit invoice_ids targeting (bypasses oldest-first)
+    if body.invoice_ids:
+        # Validate all invoices belong to the specified child
+        for inv_id in body.invoice_ids:
+            inv_chk = await db.execute(
+                select(Invoice).where(Invoice.id == inv_id, Invoice.school_id == school_id)
+            )
+            inv_obj = inv_chk.scalar_one_or_none()
+            if inv_obj is None:
+                raise HTTPException(status_code=404, detail=f"Invoice {inv_id} not found")
+            if str(inv_obj.child_id) != str(body.child_id):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Invoice {inv_id} belongs to a different child",
+                )
+        # Build allocations proportionally (divide equally for now)
+        remaining = body.amount
+        allocations = []
+        for inv_id in body.invoice_ids:
+            inv_r = await db.execute(select(Invoice).where(Invoice.id == inv_id))
+            inv_obj = inv_r.scalar_one()
+            already_paid = await get_invoice_amount_paid(db, inv_id)
+            balance = inv_obj.total_amount - already_paid
+            applied = min(balance, remaining)
+            if applied > 0:
+                allocations.append(_PA(invoice_id=inv_id, amount_applied=applied))
+                remaining -= applied
+    elif body.invoice_allocations:
+        allocations = body.invoice_allocations
+        # Validate all invoices belong to the specified child
+        for alloc in allocations:
+            inv_chk = await db.execute(
+                select(Invoice).where(Invoice.id == alloc.invoice_id, Invoice.school_id == school_id)
+            )
+            inv_obj = inv_chk.scalar_one_or_none()
+            if inv_obj and str(inv_obj.child_id) != str(body.child_id):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Invoice {alloc.invoice_id} belongs to a different child",
+                )
+    else:
+        # Auto-allocate: oldest pending invoices first
+        pending_result = await db.execute(
+            select(Invoice).where(
+                Invoice.school_id == school_id,
+                Invoice.child_id == body.child_id,
+                Invoice.status.in_(["pending", "partially_paid", "overdue"]),
+            ).order_by(Invoice.reference_month.asc())
+        )
+        pending_invoices = pending_result.scalars().all()
+        remaining = body.amount
+        allocations = []
+        for inv in pending_invoices:
+            if remaining <= 0:
+                break
+            already_paid = await get_invoice_amount_paid(db, inv.id)
+            balance = inv.total_amount - already_paid
+            applied = min(balance, remaining)
+            if applied > 0:
+                allocations.append(_PA(invoice_id=inv.id, amount_applied=applied))
+                remaining -= applied
+
+    payment_data = body.model_dump(exclude={"invoice_allocations", "invoice_ids"})
     payment_data.setdefault("payment_date", date.today())
 
     payment = Payment(school_id=school_id, **payment_data)
@@ -616,6 +729,34 @@ async def create_payment(
 
     if allocations:
         await apply_payment_to_invoices(db, school_id, payment.id, allocations)
+
+    # Auto-generate receipt
+    from app.models.modern import Receipt
+    from app.models.school import School as _School
+    from app.utils.agt import compute_hash, generate_document_number, get_last_document_hash, get_next_series_number
+
+    school_result = await db.execute(select(_School).where(_School.id == school_id))
+    school = school_result.scalar_one_or_none()
+    nif_emitter = (school.nif or "") if school else ""
+
+    today = date.today()
+    rc_number = await get_next_series_number(db, school_id, "RC", today.year)
+    rc_doc_number = generate_document_number("RC", today.year, rc_number)
+    prev_hash = await get_last_document_hash(db, school_id, Receipt)
+    rc_hash = compute_hash(rc_doc_number, today, nif_emitter, "Consumidor Final", float(body.amount), prev_hash)
+
+    receipt = Receipt(
+        school_id=school_id,
+        payment_id=payment.id,
+        invoice_id=allocations[0].invoice_id if allocations else None,
+        series_year=today.year,
+        series_number=rc_number,
+        full_document_number=rc_doc_number,
+        amount=payment.amount,
+        hash_code=rc_hash,
+        issued_by=None,
+    )
+    db.add(receipt)
 
     await db.commit()
     await db.refresh(payment)
@@ -648,9 +789,10 @@ async def get_payment(
     return data
 
 
-@router.delete("/payments/{payment_id}")
-async def delete_payment(
+@router.post("/payments/{payment_id}/reverse", response_model=PaymentResponse)
+async def reverse_payment_endpoint(
     payment_id: uuid.UUID,
+    body: dict,
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
     _=Depends(require_school_admin),
@@ -661,28 +803,57 @@ async def delete_payment(
     payment = result.scalar_one_or_none()
     if payment is None:
         raise HTTPException(status_code=404, detail="Payment not found")
+    if payment.status == "reversed":
+        raise HTTPException(status_code=400, detail="Payment is already reversed")
 
-    # Reverse all invoice allocations first
+    # Reverse all invoice allocations (remove PaymentInvoice records, recalc statuses)
     await reverse_payment(db, school_id, payment_id)
-    await db.delete(payment)
+
+    # Mark payment as reversed (immutable — never deleted)
+    payment.status = "reversed"
+    payment.reverse_reason = body.get("reason") or body.get("reverse_reason") or "Reversed"
+
     await db.commit()
-    return {"message": "Payment reversed and deleted"}
+    await db.refresh(payment)
+
+    pi_result = await db.execute(
+        select(PaymentInvoice.invoice_id).where(PaymentInvoice.payment_id == payment.id)
+    )
+    invoice_ids = [row[0] for row in pi_result.all()]
+    data = PaymentResponse.model_validate(payment)
+    data.settled_invoice_ids = invoice_ids
+    return data
+
+
+@router.delete("/payments/{payment_id}")
+async def delete_payment(payment_id: uuid.UUID, _=Depends(require_school_admin)):
+    """Hard-delete is forbidden for financial records (immutability requirement)."""
+    raise HTTPException(status_code=405, detail="Payment deletion is not allowed; use /reverse instead")
 
 
 # ─── Reports ──────────────────────────────────────────────────────────────────
 
 @router.get("/reports/pl")
 async def profit_and_loss(
-    year: int,
+    year: Optional[int] = None,
     month: Optional[int] = None,
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
     _=Depends(require_school_admin),
 ):
+    effective_year = year or date.today().year
     if month:
-        return await generate_monthly_pl(db, school_id, year, month)
+        result = await generate_monthly_pl(db, school_id, effective_year, month)
+        # Ensure spec-required keys are present: revenue = income
+        result["revenue"] = result.get("income", result.get("revenue", 0))
+        return result
     else:
-        return await generate_annual_pl(db, school_id, year)
+        result = await generate_annual_pl(db, school_id, effective_year)
+        # Add flat spec-required keys alongside annual format
+        result["revenue"] = result.get("total_income", 0)
+        result["expenses"] = result.get("total_expenses", 0)
+        result["net"] = result.get("total_net", 0)
+        return result
 
 
 @router.get("/reports/outstanding", response_model=list[OutstandingInvoice])
@@ -700,12 +871,13 @@ async def outstanding_invoices(
 
 @router.get("/reports/cash-flow", response_model=list[CashFlowMonth])
 async def cash_flow(
-    year: int,
+    year: Optional[int] = None,
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
     _=Depends(require_school_admin),
 ):
-    return await get_cash_flow(db, school_id, year)
+    effective_year = year or date.today().year
+    return await get_cash_flow(db, school_id, effective_year)
 
 
 @router.get("/reports/revenue-by-level", response_model=list[RevenuByLevel])
@@ -758,12 +930,6 @@ async def bulk_generate_invoices(
             from fastapi import HTTPException as _HTTPException
             raise _HTTPException(status_code=400, detail="due_date must be in YYYY-MM-DD format")
 
-    # Get current user's employee_id for issued_by
-    employee_id = getattr(current_user, "employee_id", None)
-    if employee_id is None:
-        from fastapi import HTTPException as _HTTPException
-        raise _HTTPException(status_code=400, detail="Current user has no associated employee record")
-
     # Get all active children in this school
     children_result = await db.execute(
         select(Child).where(Child.school_id == school_id, Child.is_active == True)
@@ -789,7 +955,7 @@ async def bulk_generate_invoices(
         invoice = Invoice(
             school_id=school_id,
             child_id=child.id,
-            issued_by=employee_id,
+            issued_by=getattr(current_user, "employee_id", None),
             reference_month=reference_month_date,
             tuition_amount=tuition,
             other_fees=_Decimal("0"),
@@ -1064,10 +1230,6 @@ async def void_invoice(
     if invoice.status == "paid":
         raise HTTPException(status_code=400, detail="Cannot void a paid invoice")
 
-    employee_id = getattr(current_user, "employee_id", None)
-    if employee_id is None:
-        raise HTTPException(status_code=400, detail="Current user has no associated employee record")
-
     school_result = await db.execute(select(School).where(School.id == school_id))  # type: ignore[arg-type]
     school = school_result.scalar_one_or_none()
     nif_emitter = (school.nif or "") if school else ""
@@ -1091,7 +1253,7 @@ async def void_invoice(
     credit_note = CreditNote(
         school_id=school_id,
         invoice_id=invoice_id,
-        issued_by=employee_id,
+        issued_by=getattr(current_user, "employee_id", None),
         series_year=today.year,
         series_number=nc_number,
         full_document_number=nc_doc_number,
@@ -1122,37 +1284,65 @@ class ReceiptCreate(BaseModel):
     nif_cliente: Optional[str] = None
 
 
+class ReceiptLineItem(BaseModel):
+    invoice_id: uuid.UUID
+    settled_document_number: Optional[str] = None
+    invoice_document_number: Optional[str] = None
+    amount_applied: Decimal
+
+
 class ReceiptResponse(BaseModel):
     model_config = {"from_attributes": True}
     id: uuid.UUID
     school_id: uuid.UUID
     payment_id: uuid.UUID
     invoice_id: Optional[uuid.UUID] = None
-    series_year: int
-    series_number: int
-    full_document_number: str
+    series_year: Optional[int] = None
+    series_number: Optional[int] = None
+    full_document_number: Optional[str] = None
     nif_cliente: Optional[str] = None
     amount: Decimal
     hash_code: Optional[str] = None
-    issued_by: uuid.UUID
-    issued_at: Optional[date] = None
-    created_at: Optional[date] = None
+    issued_by: Optional[uuid.UUID] = None
+    issued_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    lines: Optional[list] = None
 
 
 @router.get("/receipts", response_model=list[ReceiptResponse])
 async def list_receipts(
     skip: int = 0,
     limit: int = 50,
+    payment_id: Optional[uuid.UUID] = None,
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
     _=Depends(require_school_admin),
 ):
     from app.models.modern import Receipt
-    result = await db.execute(
-        select(Receipt).where(Receipt.school_id == school_id)
-        .order_by(Receipt.issued_at.desc()).offset(skip).limit(limit)
-    )
-    return result.scalars().all()
+    query = select(Receipt).where(Receipt.school_id == school_id)
+    if payment_id:
+        query = query.where(Receipt.payment_id == payment_id)
+    result = await db.execute(query.order_by(Receipt.issued_at.desc()).offset(skip).limit(limit))
+    receipts = result.scalars().all()
+    # Enrich with lines from PaymentInvoice
+    enriched = []
+    for rc in receipts:
+        pi_result = await db.execute(
+            select(PaymentInvoice, Invoice).join(Invoice, Invoice.id == PaymentInvoice.invoice_id)
+            .where(PaymentInvoice.payment_id == rc.payment_id)
+        )
+        lines = []
+        for pi, inv in pi_result.all():
+            lines.append({
+                "invoice_id": str(pi.invoice_id),
+                "settled_document_number": inv.full_document_number,
+                "invoice_document_number": inv.full_document_number,
+                "amount_applied": float(pi.amount_applied),
+            })
+        rc_dict = {c.name: getattr(rc, c.name) for c in rc.__table__.columns}
+        rc_dict["lines"] = lines
+        enriched.append(rc_dict)
+    return enriched
 
 
 @router.post("/receipts", response_model=ReceiptResponse, status_code=status.HTTP_201_CREATED)
@@ -1173,10 +1363,6 @@ async def create_receipt(
     payment = pay_result.scalar_one_or_none()
     if payment is None:
         raise HTTPException(status_code=404, detail="Payment not found")
-
-    employee_id = getattr(current_user, "employee_id", None)
-    if employee_id is None:
-        raise HTTPException(status_code=400, detail="Current user has no associated employee record")
 
     school_result = await db.execute(select(School).where(School.id == school_id))  # type: ignore[arg-type]
     school = school_result.scalar_one_or_none()
@@ -1203,7 +1389,7 @@ async def create_receipt(
         nif_cliente=body.nif_cliente,
         amount=payment.amount,
         hash_code=rc_hash,
-        issued_by=employee_id,
+        issued_by=getattr(current_user, "employee_id", None),
     )
     db.add(receipt)
     await db.commit()
@@ -1246,15 +1432,125 @@ async def get_credit_note(
     return cn
 
 
+# ─── Billing Items ────────────────────────────────────────────────────────────
+
+class BillingItemCreate(BaseModel):
+    code: str
+    name: str
+    description: Optional[str] = None
+    unit_price: Decimal = Decimal("0")
+    iva_rate: Decimal = Decimal("0")
+    iva_exemption_reason: Optional[str] = None
+
+
+class BillingItemUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    unit_price: Optional[Decimal] = None
+    iva_rate: Optional[Decimal] = None
+    iva_exemption_reason: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class BillingItemResponse(BaseModel):
+    model_config = {"from_attributes": True}
+    id: uuid.UUID
+    school_id: uuid.UUID
+    code: str
+    name: str
+    description: Optional[str] = None
+    unit_price: Decimal
+    iva_rate: Decimal
+    iva_exemption_reason: Optional[str] = None
+    is_active: Optional[bool] = True
+    created_at: Optional[datetime] = None
+
+
+@router.get("/billing-items", response_model=list[BillingItemResponse])
+async def list_billing_items(
+    active_only: bool = True,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_school_admin),
+):
+    from app.models.billing_item import BillingItem
+    query = select(BillingItem).where(BillingItem.school_id == school_id)
+    if active_only:
+        query = query.where(BillingItem.is_active == True)
+    result = await db.execute(query.order_by(BillingItem.code))
+    return result.scalars().all()
+
+
+@router.post("/billing-items", response_model=BillingItemResponse, status_code=status.HTTP_201_CREATED)
+async def create_billing_item(
+    body: BillingItemCreate,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_school_admin),
+):
+    from app.models.billing_item import BillingItem
+    from sqlalchemy.exc import IntegrityError
+    # Validate: 0% IVA requires an exemption reason
+    if body.iva_rate == Decimal("0") and not body.iva_exemption_reason:
+        raise HTTPException(
+            status_code=422,
+            detail="iva_exemption_reason is required when iva_rate is 0%",
+        )
+    # Check if item with same code already exists
+    existing_result = await db.execute(
+        select(BillingItem).where(BillingItem.school_id == school_id, BillingItem.code == body.code)
+    )
+    existing = existing_result.scalar_one_or_none()
+    if existing is not None:
+        # Idempotent: if same name and price, return existing with 201
+        if existing.name == body.name and existing.unit_price == body.unit_price:
+            return existing
+        raise HTTPException(status_code=409, detail=f"Billing item with code '{body.code}' already exists in this school")
+    item = BillingItem(school_id=school_id, **body.model_dump())
+    db.add(item)
+    await db.commit()
+    await db.refresh(item)
+    return item
+
+
+@router.patch("/billing-items/{item_id}", response_model=BillingItemResponse)
+async def update_billing_item(
+    item_id: uuid.UUID,
+    body: BillingItemUpdate,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_school_admin),
+):
+    from app.models.billing_item import BillingItem
+    result = await db.execute(
+        select(BillingItem).where(BillingItem.id == item_id, BillingItem.school_id == school_id)
+    )
+    item = result.scalar_one_or_none()
+    if item is None:
+        raise HTTPException(status_code=404, detail="Billing item not found")
+    updates = body.model_dump(exclude_unset=True)
+    # code is immutable
+    updates.pop("code", None)
+    for field, value in updates.items():
+        setattr(item, field, value)
+    await db.commit()
+    await db.refresh(item)
+    return item
+
+
+
+
 # ─── Contracts ────────────────────────────────────────────────────────────────
 
 class ContractCreate(BaseModel):
     child_id: uuid.UUID
     guardian_id: Optional[uuid.UUID] = None
-    service_name: str
+    billing_item_id: Optional[uuid.UUID] = None
+    service_name: Optional[str] = None
     description: Optional[str] = None
-    amount: Decimal
-    iva_rate: Decimal = Decimal("14.00")
+    unit_price: Optional[Decimal] = None
+    amount: Optional[Decimal] = None
+    iva_rate: Decimal = Decimal("0")
     billing_cycle: str = "monthly"
     day_of_month: int = 1
     start_date: date
@@ -1266,6 +1562,7 @@ class ContractCreate(BaseModel):
 class ContractUpdate(BaseModel):
     service_name: Optional[str] = None
     description: Optional[str] = None
+    unit_price: Optional[Decimal] = None
     amount: Optional[Decimal] = None
     iva_rate: Optional[Decimal] = None
     billing_cycle: Optional[str] = None
@@ -1282,8 +1579,10 @@ class ContractResponse(BaseModel):
     school_id: uuid.UUID
     child_id: uuid.UUID
     guardian_id: Optional[uuid.UUID] = None
-    service_name: str
+    billing_item_id: Optional[uuid.UUID] = None
+    service_name: Optional[str] = None
     description: Optional[str] = None
+    unit_price: Optional[Decimal] = None
     amount: Decimal
     iva_rate: Decimal
     billing_cycle: str
@@ -1294,8 +1593,8 @@ class ContractResponse(BaseModel):
     auto_invoice: bool
     last_invoiced_month: Optional[date] = None
     notes: Optional[str] = None
-    created_at: Optional[date] = None
-    updated_at: Optional[date] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     child_name: Optional[str] = None
 
 
@@ -1306,12 +1605,52 @@ async def create_contract(
     db: AsyncSession = Depends(get_db),
     _=Depends(require_school_admin),
 ):
+    from app.models.billing_item import BillingItem
     from app.models.modern import Contract
-    contract = Contract(school_id=school_id, **body.model_dump())
+
+    data = body.model_dump()
+
+    # Resolve price and service_name from billing_item if provided
+    effective_price = data.get("unit_price") or data.get("amount")
+    if body.billing_item_id:
+        bi_result = await db.execute(
+            select(BillingItem).where(BillingItem.id == body.billing_item_id, BillingItem.school_id == school_id)
+        )
+        bi = bi_result.scalar_one_or_none()
+        if bi is None:
+            raise HTTPException(status_code=404, detail="Billing item not found")
+        if not data.get("service_name"):
+            data["service_name"] = bi.name
+        if effective_price is None:
+            effective_price = bi.unit_price
+        if data.get("iva_rate") == Decimal("0") or data.get("iva_rate") is None:
+            data["iva_rate"] = bi.iva_rate
+
+    data["amount"] = effective_price or Decimal("0")
+    data["unit_price"] = effective_price
+
+    contract = Contract(school_id=school_id, **data)
     db.add(contract)
     await db.commit()
     await db.refresh(contract)
-    return contract
+    return {**contract.__dict__, "child_name": None}
+
+
+@router.get("/contracts/{contract_id}", response_model=ContractResponse)
+async def get_contract(
+    contract_id: uuid.UUID,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_school_admin),
+):
+    from app.models.modern import Contract
+    result = await db.execute(
+        select(Contract).where(Contract.id == contract_id, Contract.school_id == school_id)
+    )
+    contract = result.scalar_one_or_none()
+    if contract is None:
+        raise HTTPException(status_code=404, detail="Contract not found")
+    return {**contract.__dict__, "child_name": None}
 
 
 @router.get("/contracts", response_model=list[ContractResponse])
@@ -1364,11 +1703,17 @@ async def update_contract(
     contract = result.scalar_one_or_none()
     if contract is None:
         raise HTTPException(status_code=404, detail="Contract not found")
-    for field, value in body.model_dump(exclude_unset=True).items():
+    updates = body.model_dump(exclude_unset=True)
+    # Sync unit_price ↔ amount
+    if "unit_price" in updates and updates["unit_price"] is not None:
+        updates["amount"] = updates["unit_price"]
+    if "amount" in updates and updates["amount"] is not None:
+        updates["unit_price"] = updates["amount"]
+    for field, value in updates.items():
         setattr(contract, field, value)
     await db.commit()
     await db.refresh(contract)
-    return contract
+    return {**contract.__dict__, "child_name": None}
 
 
 @router.delete("/contracts/{contract_id}")
@@ -1390,9 +1735,14 @@ async def deactivate_contract(
     return {"message": "Contract deactivated", "id": str(contract_id)}
 
 
+class GenerateInvoiceBody(BaseModel):
+    reference_month: Optional[date] = None
+
+
 @router.post("/contracts/{contract_id}/generate-invoice", response_model=InvoiceResponse)
 async def generate_invoice_for_contract(
     contract_id: uuid.UUID,
+    body: GenerateInvoiceBody = GenerateInvoiceBody(),
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_school_admin),
@@ -1410,16 +1760,14 @@ async def generate_invoice_for_contract(
     if not contract.is_active:
         raise HTTPException(status_code=400, detail="Contract is not active")
 
-    employee_id = getattr(current_user, "employee_id", None)
-    if employee_id is None:
-        raise HTTPException(status_code=400, detail="Current user has no associated employee record")
-
     school_result = await db.execute(select(School).where(School.id == school_id))  # type: ignore[arg-type]
     school = school_result.scalar_one_or_none()
     nif_emitter = (school.nif or "") if school else ""
 
     today = date.today()
-    ref_month = date(today.year, today.month, 1)
+    ref_month = body.reference_month or date(today.year, today.month, 1)
+    if not isinstance(ref_month, date):
+        ref_month = date(today.year, today.month, 1)
 
     taxable_base = contract.amount
     iva_rate = contract.iva_rate
@@ -1433,7 +1781,7 @@ async def generate_invoice_for_contract(
     invoice = Invoice(
         school_id=school_id,
         child_id=contract.child_id,
-        issued_by=employee_id,
+        issued_by=getattr(current_user, "employee_id", None),
         reference_month=ref_month,
         tuition_amount=taxable_base,
         other_fees=Decimal("0"),
@@ -1465,8 +1813,13 @@ class AutoGenerateContractsResponse(BaseModel):
     errors: int
 
 
+class AutoGenerateBody(BaseModel):
+    reference_month: Optional[date] = None
+
+
 @router.post("/invoices/auto-generate-contracts", response_model=AutoGenerateContractsResponse)
 async def auto_generate_contract_invoices(
+    body: AutoGenerateBody = AutoGenerateBody(),
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_school_admin),
@@ -1475,12 +1828,12 @@ async def auto_generate_contract_invoices(
     from app.models.school import School
     from app.utils.agt import compute_hash, generate_document_number, get_last_document_hash, get_next_series_number
 
-    employee_id = getattr(current_user, "employee_id", None)
-    if employee_id is None:
-        raise HTTPException(status_code=400, detail="Current user has no associated employee record")
-
     today = date.today()
-    current_month = date(today.year, today.month, 1)
+    if body.reference_month:
+        ref_date = body.reference_month
+        current_month = date(ref_date.year, ref_date.month, 1)
+    else:
+        current_month = date(today.year, today.month, 1)
 
     school_result = await db.execute(select(School).where(School.id == school_id))  # type: ignore[arg-type]
     school = school_result.scalar_one_or_none()
@@ -1491,8 +1844,7 @@ async def auto_generate_contract_invoices(
             Contract.school_id == school_id,
             Contract.is_active == True,
             Contract.auto_invoice == True,
-            Contract.day_of_month <= today.day,
-            Contract.start_date <= today,
+            Contract.start_date <= current_month,
         )
     )
     contracts = contracts_result.scalars().all()
@@ -1528,7 +1880,7 @@ async def auto_generate_contract_invoices(
             invoice = Invoice(
                 school_id=school_id,
                 child_id=contract.child_id,
-                issued_by=employee_id,
+                issued_by=getattr(current_user, "employee_id", None),
                 reference_month=current_month,
                 tuition_amount=taxable_base,
                 other_fees=Decimal("0"),
@@ -1618,8 +1970,9 @@ async def delinquent_report(
 
 @router.get("/reports/saft")
 async def saft_export(
-    from_date: date,
-    to_date: date,
+    year: Optional[int] = None,
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
     _=Depends(require_school_admin),
@@ -1632,10 +1985,18 @@ async def saft_export(
     if school is None:
         raise HTTPException(status_code=404, detail="School not found")
 
+    # Resolve date range: year param takes precedence over from_date/to_date
+    today = date.today()
+    if year:
+        from_date = date(year, 1, 1)
+        to_date = date(year, 12, 31)
+    elif from_date is None:
+        from_date = date(today.year, 1, 1)
+        to_date = date(today.year, 12, 31)
+
     company_nif = school.nif or "000000000"
     company_name = school.legal_name or school.name
     fiscal_year = from_date.year
-    today = date.today()
 
     # Get invoices in period
     invoices_result = await db.execute(
@@ -1689,10 +2050,12 @@ async def saft_export(
         customer_id = inv.nif_cliente or "Consumidor Final"
         doc_number = inv.full_document_number or str(inv.id)
         description = inv.description or inv.document_type or "Serviço"
+        inv_status = "A" if inv.status == "cancelled" or inv.is_void else "N"
         invoice_lines_xml += f"""
         <Invoice>
           <InvoiceNo>{doc_number}</InvoiceNo>
           <InvoiceType>{inv.document_type}</InvoiceType>
+          <InvoiceStatus>{inv_status}</InvoiceStatus>
           <InvoiceDate>{inv.invoice_date}</InvoiceDate>
           <CustomerID>{customer_id}</CustomerID>
           <Line>

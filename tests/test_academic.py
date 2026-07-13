@@ -35,6 +35,28 @@ async def _create_child(client: AsyncClient, token: str) -> dict:
     return r.json()
 
 
+async def _create_child_with_guardian(client: AsyncClient, token: str) -> dict:
+    """Create a child and link a primary guardian (required for active enrollment)."""
+    child = await _create_child(client, token)
+    guardian_r = await client.post(
+        "/guardians",
+        json={
+            "first_name": "Parent", "last_name": "Test",
+            "username": f"grd-{uid()}", "password": "Guardian1!",
+        },
+        headers=auth(token),
+    )
+    assert guardian_r.status_code == 201, guardian_r.text
+    guardian_id = guardian_r.json()["id"]
+    link_r = await client.post(
+        f"/guardians/{guardian_id}/children",
+        json={"child_id": child["id"], "relationship_type": "mother", "is_primary_contact": True},
+        headers=auth(token),
+    )
+    assert link_r.status_code == 201, link_r.text
+    return child
+
+
 # ---------------------------------------------------------------------------
 # Turmas
 # ---------------------------------------------------------------------------
@@ -181,7 +203,7 @@ async def test_create_enrollment(client: AsyncClient, make_school):
     )
     assert sched_r.status_code == 201, sched_r.text
     sched_id = sched_r.json()["id"]
-    child = await _create_child(client, token)
+    child = await _create_child_with_guardian(client, token)
 
     r = await client.post(
         "/academic/enrollments",
@@ -214,7 +236,7 @@ async def test_list_enrollments(client: AsyncClient, make_school):
     )
     assert sched_r.status_code == 201, sched_r.text
     sched_id = sched_r.json()["id"]
-    child = await _create_child(client, token)
+    child = await _create_child_with_guardian(client, token)
     await client.post(
         "/academic/enrollments",
         json={
@@ -250,7 +272,7 @@ async def test_enrollment_has_enrichment(client: AsyncClient, make_school):
     )
     assert sched_r.status_code == 201, sched_r.text
     sched_id = sched_r.json()["id"]
-    child = await _create_child(client, token)
+    child = await _create_child_with_guardian(client, token)
     await client.post(
         "/academic/enrollments",
         json={
@@ -288,7 +310,7 @@ async def test_update_enrollment(client: AsyncClient, make_school):
     )
     assert sched_r.status_code == 201, sched_r.text
     sched_id = sched_r.json()["id"]
-    child = await _create_child(client, token)
+    child = await _create_child_with_guardian(client, token)
     enroll_r = await client.post(
         "/academic/enrollments",
         json={

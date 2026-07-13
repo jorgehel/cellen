@@ -59,27 +59,50 @@ async def create_absence(
 @router.get("/summary/{employee_id}", response_model=AbsenceSummary)
 async def absence_summary(
     employee_id: uuid.UUID,
+    month: Optional[str] = None,  # YYYY-MM format
     school_year_id: Optional[uuid.UUID] = None,
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
     _=Depends(require_teacher),
 ):
+    import calendar as _calendar
+
     query = select(Absence).where(
         Absence.school_id == school_id, Absence.employee_id == employee_id
     )
     if school_year_id:
         query = query.where(Absence.school_year_id == school_year_id)
+    if month:
+        try:
+            y, m = int(month[:4]), int(month[5:7])
+            start_d = date(y, m, 1)
+            end_d = date(y, m, _calendar.monthrange(y, m)[1])
+            query = query.where(Absence.absence_date >= start_d, Absence.absence_date <= end_d)
+        except (ValueError, IndexError):
+            pass
     result = await db.execute(query)
     absences = result.scalars().all()
 
     total = len(absences)
     justified = sum(1 for a in absences if a.justified)
     unjustified = total - justified
+
+    # Breakdown by absence_type
+    by_type: dict = {}
+    for a in absences:
+        t = (a.absence_type or "other").lower()
+        by_type[t] = by_type.get(t, 0) + 1
+
     return AbsenceSummary(
         employee_id=employee_id,
         total=total,
+        total_days=total,
         justified=justified,
         unjustified=unjustified,
+        sick=by_type.get("sick", 0),
+        personal=by_type.get("personal", 0),
+        vacation=by_type.get("vacation", 0),
+        other=by_type.get("other", 0),
     )
 
 

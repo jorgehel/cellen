@@ -83,7 +83,7 @@ class ActivityResponse(ActivityBase):
 class ScheduleSlotBase(BaseModel):
     day_of_week: int
     slot_time: time
-    activity_id: uuid.UUID
+    activity_id: Optional[uuid.UUID] = None
 
 
 class ScheduleSlotCreate(ScheduleSlotBase):
@@ -101,6 +101,8 @@ class ScheduleSlotResponse(ScheduleSlotBase):
 class ScheduleBase(BaseModel):
     turma_id: uuid.UUID
     school_year_id: uuid.UUID
+    effective_from: Optional[date] = None
+    effective_to: Optional[date] = None
 
 
 class ScheduleCreate(ScheduleBase):
@@ -110,6 +112,8 @@ class ScheduleCreate(ScheduleBase):
 class ScheduleUpdate(BaseModel):
     turma_id: Optional[uuid.UUID] = None
     school_year_id: Optional[uuid.UUID] = None
+    effective_from: Optional[date] = None
+    effective_to: Optional[date] = None
 
 
 class ScheduleResponse(ScheduleBase):
