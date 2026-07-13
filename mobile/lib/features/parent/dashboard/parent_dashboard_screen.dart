@@ -406,13 +406,23 @@ class _ParentDashboardScreenState
             const SizedBox(height: 28),
 
             // ── Invoices ──
-            const Text(
-              'Faturas',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-                color: AppTheme.textPrimary,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Faturas',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textPrimary,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => context.go('/parent/invoices'),
+                  child: const Text('Ver todas',
+                      style: TextStyle(color: AppTheme.primary, fontSize: 13, fontWeight: FontWeight.w600)),
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             invoicesAsync.when(
@@ -481,6 +491,7 @@ class _ParentDashboardScreenState
                               child: const Icon(Icons.receipt_long,
                                   color: AppTheme.warning, size: 20),
                             ),
+                            onTap: () => context.go('/parent/invoices'),
                             title: Text(
                               inv.description ?? inv.childName ?? 'Fatura',
                               style: const TextStyle(
@@ -548,6 +559,72 @@ class _ChildCard extends StatelessWidget {
 
   const _ChildCard({required this.child});
 
+  void _showChildActions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: AppTheme.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text(
+                child.fullName,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+            ),
+            const Divider(height: 1),
+            _ActionTile(
+              icon: Icons.menu_book_outlined,
+              color: const Color(0xFF7C3AED),
+              label: 'Caderneta',
+              subtitle: 'Relatórios diários do educador',
+              onTap: () { Navigator.pop(context); context.go('/parent/caderneta'); },
+            ),
+            _ActionTile(
+              icon: Icons.health_and_safety_outlined,
+              color: AppTheme.success,
+              label: 'Saúde',
+              subtitle: 'Eventos de saúde e vacinas',
+              onTap: () { Navigator.pop(context); context.go('/health'); },
+            ),
+            _ActionTile(
+              icon: Icons.receipt_long_outlined,
+              color: AppTheme.warning,
+              label: 'Finanças',
+              subtitle: 'Faturas e referências Multicaixa',
+              onTap: () { Navigator.pop(context); context.go('/parent/invoices'); },
+            ),
+            _ActionTile(
+              icon: Icons.assignment_outlined,
+              color: AppTheme.primary,
+              label: 'Autorizações',
+              subtitle: 'Aprovações de passeios e levantamentos',
+              onTap: () { Navigator.pop(context); context.go('/trip-authorizations'); },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     String? ageStr;
@@ -563,9 +640,14 @@ class _ChildCard extends StatelessWidget {
       }
     }
 
-    return Container(
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: () => _showChildActions(context),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
       decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppTheme.border),
       ),
@@ -624,6 +706,46 @@ class _ChildCard extends StatelessWidget {
           ),
         ],
       ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ActionTile extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String label;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _ActionTile({
+    required this.icon,
+    required this.color,
+    required this.label,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon, color: color, size: 20),
+      ),
+      title: Text(label,
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+      subtitle: Text(subtitle,
+          style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+      trailing: const Icon(Icons.chevron_right,
+          size: 18, color: AppTheme.textSecondary),
+      onTap: onTap,
     );
   }
 }

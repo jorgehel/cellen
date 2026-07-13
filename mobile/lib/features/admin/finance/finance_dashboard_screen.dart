@@ -287,6 +287,7 @@ class FinanceDashboardScreen extends ConsumerWidget {
                         margin: const EdgeInsets.only(bottom: 6),
                         child: ListTile(
                           dense: true,
+                          onTap: () => context.go('/admin/finance/invoices'),
                           title: Text(
                             inv.childName ??
                                 'Criança ${inv.childId.substring(0, 6)}',

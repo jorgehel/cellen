@@ -170,6 +170,11 @@ class _InvoicesScreenState extends ConsumerState<InvoicesScreen> {
                         child: ListTile(
                           contentPadding: const EdgeInsets.symmetric(
                               horizontal: 16, vertical: 8),
+                          onTap: (inv.status != 'paid' &&
+                                  inv.status != 'cancelled' &&
+                                  inv.status != 'void')
+                              ? () => _showRecordPaymentDialog(context, inv)
+                              : null,
                           title: Text(
                             inv.childName ??
                                 'Criança ${inv.childId.substring(0, 8)}',

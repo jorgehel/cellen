@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/api/api_client.dart';
+import '../../../core/auth/auth_provider.dart';
 import '../../../core/models/attendance.dart';
 
 // ---------------------------------------------------------------------------
@@ -59,6 +61,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
   @override
   Widget build(BuildContext context) {
     final attendanceAsync = ref.watch(attendanceTodayProvider);
+    final auth = ref.watch(authProvider);
     final today = DateFormat('d \'de\' MMMM yyyy', 'pt_PT').format(DateTime.now());
 
     return Scaffold(
@@ -189,6 +192,9 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
                                 _checkIn(filtered[i].childId),
                             onCheckOut: () =>
                                 _checkOut(filtered[i].childId),
+                            onTap: auth.isAdmin
+                                ? () => context.push('/admin/children/${filtered[i].childId}')
+                                : null,
                           );
                         },
                       ),
@@ -323,11 +329,13 @@ class _AttendanceCard extends StatelessWidget {
   final AttendanceRecord record;
   final VoidCallback onCheckIn;
   final VoidCallback onCheckOut;
+  final VoidCallback? onTap;
 
   const _AttendanceCard({
     required this.record,
     required this.onCheckIn,
     required this.onCheckOut,
+    this.onTap,
   });
 
   @override
@@ -338,7 +346,10 @@ class _AttendanceCard extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
         padding: const EdgeInsets.all(12),
         child: Row(
           children: [
@@ -407,6 +418,7 @@ class _AttendanceCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
       ),
     );
   }
