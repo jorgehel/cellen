@@ -129,7 +129,7 @@ async def test_parent_cadernetas(client: AsyncClient, make_school):
     guardian, parent_tok = await _make_guardian_and_login(client, admin_tok, slug)
     await _link_guardian_to_child(client, admin_tok, guardian["id"], child["id"])
 
-    r = await client.get("/parent/cadernetas", headers=auth(parent_tok))
+    r = await client.get("/cadernetas/parent", headers=auth(parent_tok))
     assert r.status_code == 200
     assert isinstance(r.json(), list)
 
