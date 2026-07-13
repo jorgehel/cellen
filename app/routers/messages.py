@@ -8,8 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, get_school_id, require_teacher
-from app.models.modern import Message, MessageThread, ThreadParticipant
+from app.core.dependencies import get_current_user, get_school_id, require_school_admin
+from app.models.modern import Message, MessageThread, ThreadParticipant, Notification
 from app.models.user import User
 
 router = APIRouter(prefix="/messages", tags=["messages"])
@@ -19,8 +19,8 @@ router = APIRouter(prefix="/messages", tags=["messages"])
 
 class ThreadCreate(BaseModel):
     subject: str
-    participant_user_ids: List[uuid.UUID]
-    message: str
+    participant_ids: List[uuid.UUID]  # can be user_id, employee_id, or guardian_id
+    message: Optional[str] = None
     thread_type: Optional[str] = "direct"
 
 
@@ -29,8 +29,8 @@ class MessagePost(BaseModel):
 
 
 class BroadcastCreate(BaseModel):
-    subject: str
-    message: str
+    body: str
+    subject: Optional[str] = None
     target: str = "all"  # all, parents, teachers, staff
 
 
@@ -59,6 +59,36 @@ class MessageResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ─── Helper: resolve a participant ID to a user_id ───────────────────────────
+
+async def _resolve_user_id(db: AsyncSession, pid: uuid.UUID, school_id: uuid.UUID) -> Optional[uuid.UUID]:
+    """Try to find a User for the given ID — it might be a user_id, employee_id, or guardian_id."""
+    # Direct user_id
+    r = await db.execute(
+        select(User.id).where(User.id == pid, User.school_id == school_id)
+    )
+    if r.scalar_one_or_none():
+        return pid
+
+    # Employee ID
+    r2 = await db.execute(
+        select(User.id).where(User.employee_id == pid, User.school_id == school_id)
+    )
+    uid = r2.scalar_one_or_none()
+    if uid:
+        return uid
+
+    # Guardian ID
+    r3 = await db.execute(
+        select(User.id).where(User.guardian_id == pid, User.school_id == school_id)
+    )
+    uid = r3.scalar_one_or_none()
+    if uid:
+        return uid
+
+    return None
+
+
 # ─── Endpoints ────────────────────────────────────────────────────────────────
 
 @router.get("/threads", response_model=List[ThreadResponse])
@@ -67,7 +97,6 @@ async def list_threads(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    # Get threads where current user is a participant
     thread_ids_result = await db.execute(
         select(ThreadParticipant.thread_id).where(
             ThreadParticipant.user_id == current_user.id,
@@ -86,7 +115,6 @@ async def list_threads(
     )
     threads = result.scalars().all()
 
-    # Bulk fetch latest message per thread
     messages_result = await db.execute(
         select(Message)
         .where(Message.thread_id.in_(thread_ids), Message.school_id == school_id)
@@ -94,14 +122,12 @@ async def list_threads(
     )
     all_messages = messages_result.scalars().all()
 
-    # Build per-thread lookups
     latest_msg: dict[uuid.UUID, Message] = {}
     thread_messages: dict[uuid.UUID, list] = {tid: [] for tid in thread_ids}
     for msg in all_messages:
-        latest_msg[msg.thread_id] = msg  # last wins since ordered asc
+        latest_msg[msg.thread_id] = msg
         thread_messages[msg.thread_id].append(msg)
 
-    # Fetch current user's participant row for each thread (for last_read_at)
     participants_result = await db.execute(
         select(ThreadParticipant).where(
             ThreadParticipant.thread_id.in_(thread_ids),
@@ -118,13 +144,19 @@ async def list_threads(
         participant = user_participants.get(thread.id)
         last_read_at = participant.last_read_at if participant else None
 
-        # Count messages created after the user's last read time
+        from datetime import timezone
         msgs_in_thread = thread_messages.get(thread.id, [])
         if last_read_at is None:
             unread_count = len(msgs_in_thread)
         else:
+            # Normalize last_read_at to UTC-aware for comparison
+            if last_read_at.tzinfo is None:
+                last_read_at = last_read_at.replace(tzinfo=timezone.utc)
             unread_count = sum(
-                1 for m in msgs_in_thread if m.created_at > last_read_at
+                1 for m in msgs_in_thread
+                if m.created_at and (
+                    m.created_at.replace(tzinfo=timezone.utc) if m.created_at.tzinfo is None else m.created_at
+                ) > last_read_at
             )
 
         enriched.append({
@@ -147,36 +179,45 @@ async def create_thread(
     thread = MessageThread(
         school_id=school_id,
         subject=body.subject,
-        thread_type=body.thread_type,
+        thread_type=body.thread_type or "direct",
         created_by=current_user.id,
     )
     db.add(thread)
     await db.flush()
 
-    # Add creator as participant
-    participant_ids = set(body.participant_user_ids)
-    participant_ids.add(current_user.id)
+    # Resolve participant IDs (may be user_id, employee_id, or guardian_id)
+    participant_user_ids: set[uuid.UUID] = {current_user.id}
+    for pid in body.participant_ids:
+        resolved = await _resolve_user_id(db, pid, school_id)
+        if resolved:
+            participant_user_ids.add(resolved)
 
-    for uid in participant_ids:
-        participant = ThreadParticipant(
+    for uid in participant_user_ids:
+        db.add(ThreadParticipant(
             thread_id=thread.id,
             user_id=uid,
             school_id=school_id,
-        )
-        db.add(participant)
+        ))
 
-    # Create first message
-    first_message = Message(
-        school_id=school_id,
-        thread_id=thread.id,
-        sender_id=current_user.id,
-        body=body.message,
-    )
-    db.add(first_message)
+    # Create first message if provided
+    if body.message:
+        db.add(Message(
+            school_id=school_id,
+            thread_id=thread.id,
+            sender_id=current_user.id,
+            body=body.message,
+        ))
 
     await db.commit()
     await db.refresh(thread)
-    return thread
+
+    # Return with unread_count=0 (just created)
+    return {
+        **thread.__dict__,
+        "last_message_body": body.message,
+        "last_message_at": None,
+        "unread_count": 0,
+    }
 
 
 @router.get("/threads/{thread_id}/messages", response_model=List[MessageResponse])
@@ -186,7 +227,6 @@ async def list_thread_messages(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    # Verify thread exists and belongs to school
     thread_result = await db.execute(
         select(MessageThread).where(
             MessageThread.id == thread_id,
@@ -196,7 +236,6 @@ async def list_thread_messages(
     if thread_result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Thread not found")
 
-    # Verify user is a participant
     participant_result = await db.execute(
         select(ThreadParticipant).where(
             ThreadParticipant.thread_id == thread_id,
@@ -213,7 +252,6 @@ async def list_thread_messages(
     )
     messages = result.scalars().all()
 
-    # Fetch all participants for read-receipt computation
     participants_result = await db.execute(
         select(ThreadParticipant).where(ThreadParticipant.thread_id == thread_id)
     )
@@ -226,6 +264,7 @@ async def list_thread_messages(
             for p in participants
             if p.user_id != msg.sender_id
             and p.last_read_at is not None
+            and msg.created_at is not None
             and p.last_read_at >= msg.created_at
         )
         enriched.append({**msg.__dict__, "read_count": read_count})
@@ -268,7 +307,7 @@ async def post_message(
     db.add(message)
     await db.commit()
     await db.refresh(message)
-    return message
+    return {**message.__dict__, "read_count": 0}
 
 
 @router.put("/threads/{thread_id}/read", status_code=status.HTTP_200_OK)
@@ -288,19 +327,20 @@ async def mark_thread_read(
     if participant is None:
         raise HTTPException(status_code=403, detail="Access denied: not a participant in this thread")
 
-    participant.last_read_at = datetime.utcnow()
+    from datetime import timezone
+    participant.last_read_at = datetime.now(timezone.utc)
     await db.commit()
     return {"message": "Thread marked as read"}
 
 
-@router.post("/broadcast", response_model=ThreadResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/broadcast", status_code=status.HTTP_201_CREATED)
 async def broadcast_message(
     body: BroadcastCreate,
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_teacher),
+    current_user=Depends(require_school_admin),
 ):
-    """Send a broadcast message to all users matching the given target role."""
+    """Admin-only: send a broadcast notification to all users matching the target role."""
 
     target = body.target.lower()
     if target not in ("all", "parents", "teachers", "staff"):
@@ -309,7 +349,6 @@ async def broadcast_message(
             detail="target must be one of: all, parents, teachers, staff",
         )
 
-    # Resolve target roles to User.role values
     role_filters: List[str] = []
     if target in ("all", "parents"):
         role_filters.append("parent")
@@ -327,17 +366,16 @@ async def broadcast_message(
     )
     recipient_users = recipients_result.scalars().all()
 
-    # Create broadcast thread
+    subject = body.subject or "Comunicado"
     thread = MessageThread(
         school_id=school_id,
-        subject=body.subject,
+        subject=subject,
         thread_type="broadcast",
         created_by=current_user.id,
     )
     db.add(thread)
     await db.flush()
 
-    # Add sender as participant
     participant_ids: set = {current_user.id}
     for user in recipient_users:
         participant_ids.add(user.id)
@@ -349,14 +387,30 @@ async def broadcast_message(
             school_id=school_id,
         ))
 
-    # Create the first message
     db.add(Message(
         school_id=school_id,
         thread_id=thread.id,
         sender_id=current_user.id,
-        body=body.message,
+        body=body.body,
     ))
+
+    # Create notifications for all recipients
+    for user in recipient_users:
+        db.add(Notification(
+            school_id=school_id,
+            user_id=user.id,
+            type="broadcast",
+            title=subject,
+            body=body.body[:255],
+            related_id=thread.id,
+            related_type="message_thread",
+        ))
 
     await db.commit()
     await db.refresh(thread)
-    return thread
+    return {
+        **thread.__dict__,
+        "last_message_body": body.body,
+        "last_message_at": None,
+        "unread_count": 0,
+    }

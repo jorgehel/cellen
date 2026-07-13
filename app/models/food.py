@@ -20,9 +20,9 @@ class Food(Base):
         UUID(as_uuid=True), ForeignKey("schools.id", ondelete="RESTRICT"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    details: Mapped[Optional[str]] = mapped_column(String(500))
-    type: Mapped[Optional[str]] = mapped_column(String(50))  # sopa, prato, sobremesa, lanche, bebida
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    description: Mapped[Optional[str]] = mapped_column(String(500))
+    food_type: Mapped[Optional[str]] = mapped_column(String(50))  # breakfast, lunch, snack, etc.
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class FoodMenu(Base):
@@ -39,12 +39,12 @@ class FoodMenu(Base):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    items = relationship("FoodMenuItem", back_populates="menu", cascade="all, delete-orphan")
+    items = relationship("FoodMenuItem", back_populates="menu", cascade="all, delete-orphan", lazy="selectin")
 
 
 class FoodMenuItem(Base):

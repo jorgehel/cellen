@@ -6,7 +6,14 @@ from fastapi import HTTPException, UploadFile
 
 from app.core.config import settings
 
-ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
+ALLOWED_CONTENT_TYPES = {
+    "image/jpeg", "image/png", "image/webp", "image/gif",
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 

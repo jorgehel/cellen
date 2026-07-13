@@ -46,6 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.models.base import Base  # noqa: F401
 import app.models.absence  # noqa: F401
 import app.models.academic  # noqa: F401
+import app.models.billing_item  # noqa: F401
 import app.models.caderneta  # noqa: F401
 import app.models.employee  # noqa: F401
 import app.models.finance  # noqa: F401
@@ -53,6 +54,7 @@ import app.models.food  # noqa: F401
 import app.models.immunization  # noqa: F401
 import app.models.modern  # noqa: F401
 import app.models.person  # noqa: F401
+import app.models.pickup_auth  # noqa: F401
 import app.models.school  # noqa: F401
 import app.models.trip_authorization  # noqa: F401
 import app.models.user  # noqa: F401
@@ -72,11 +74,15 @@ def setup_database():
     """Drop, recreate all tables, and seed the platform admin before any test."""
 
     async def _setup() -> None:
+        from sqlalchemy import text
         from app.models.school import PlatformUser
 
         eng = create_async_engine(_TEST_DB_URL, echo=False)
         async with eng.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
+            # Drop and recreate schema to handle leftover tables from schema changes
+            await conn.execute(text("DROP SCHEMA public CASCADE"))
+            await conn.execute(text("CREATE SCHEMA public"))
+            await conn.execute(text("GRANT ALL ON SCHEMA public TO PUBLIC"))
             await conn.run_sync(Base.metadata.create_all)
 
         factory = async_sessionmaker(eng, expire_on_commit=False)

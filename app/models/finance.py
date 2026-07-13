@@ -1,13 +1,13 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import (
     Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer,
     Numeric, String, Text, UniqueConstraint, func
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -56,6 +56,8 @@ class Expense(Base):
     reference: Mapped[Optional[str]] = mapped_column(String(255))
     receipt_url: Mapped[Optional[str]] = mapped_column(String(500))
     notes: Mapped[Optional[str]] = mapped_column(Text)
+    is_voided: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    void_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -79,8 +81,11 @@ class Invoice(Base):
     child_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("children.id", ondelete="RESTRICT"), nullable=False
     )
-    issued_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="RESTRICT"), nullable=False
+    billing_guardian_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("guardians.id", ondelete="SET NULL"), nullable=True
+    )
+    issued_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="RESTRICT"), nullable=True
     )
     school_year_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("school_years.id", ondelete="SET NULL"), nullable=True
@@ -112,6 +117,7 @@ class Invoice(Base):
     previous_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     is_void: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     void_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    lines: Mapped[Optional[Any]] = mapped_column(JSONB, nullable=True)  # invoice line items
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -145,6 +151,8 @@ class Payment(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     payment_method: Mapped[Optional[str]] = mapped_column(String(50))  # cash, transfer, check, card
     notes: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="normal")  # normal, reversed
+    reverse_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     invoice_links = relationship("PaymentInvoice", back_populates="payment", cascade="all, delete-orphan")

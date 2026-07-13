@@ -95,6 +95,19 @@ async def create_school(
         )
         db.add(category)
 
+    # Seed default billing items
+    from app.models.billing_item import BillingItem
+    from decimal import Decimal as _Decimal
+    default_billing_items = [
+        {"code": "MENS-BERC", "name": "Mensalidade Berçário", "unit_price": _Decimal("45000.00"), "iva_rate": _Decimal("0"), "iva_exemption_reason": "M10"},
+        {"code": "MENS-CRECHE", "name": "Mensalidade Creche", "unit_price": _Decimal("35000.00"), "iva_rate": _Decimal("0"), "iva_exemption_reason": "M10"},
+        {"code": "MENS-JARDIN", "name": "Mensalidade Jardim de Infância", "unit_price": _Decimal("30000.00"), "iva_rate": _Decimal("0"), "iva_exemption_reason": "M10"},
+        {"code": "MATRICULA", "name": "Matrícula", "unit_price": _Decimal("10000.00"), "iva_rate": _Decimal("0"), "iva_exemption_reason": "M10"},
+        {"code": "EXTRAS", "name": "Serviços Extras", "unit_price": _Decimal("0.00"), "iva_rate": _Decimal("0"), "iva_exemption_reason": "M10"},
+    ]
+    for bi_data in default_billing_items:
+        db.add(BillingItem(school_id=school.id, **bi_data))
+
     # Create school_admin user
     admin_user = User(
         school_id=school.id,

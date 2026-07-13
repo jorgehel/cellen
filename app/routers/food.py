@@ -5,9 +5,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.dependencies import get_school_id, require_school_admin, require_teacher
+from app.core.dependencies import get_current_user, get_school_id, require_school_admin, require_teacher
 from app.models.food import Food, FoodMenu, FoodMenuItem
 from app.schemas.food import (
     FoodCreate, FoodMenuCreate, FoodMenuItemCreate, FoodMenuItemResponse,
@@ -26,11 +27,11 @@ async def list_foods(
     food_type: Optional[str] = None,
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_teacher),
+    _=Depends(get_current_user),
 ):
     query = select(Food).where(Food.school_id == school_id)
     if food_type:
-        query = query.where(Food.type == food_type)
+        query = query.where(Food.food_type == food_type)
     result = await db.execute(query.offset(skip).limit(limit))
     return result.scalars().all()
 
@@ -54,7 +55,7 @@ async def get_food(
     food_id: uuid.UUID,
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_teacher),
+    _=Depends(get_current_user),
 ):
     result = await db.execute(
         select(Food).where(Food.id == food_id, Food.school_id == school_id)
@@ -113,9 +114,13 @@ async def list_menus(
     level: Optional[str] = None,
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_teacher),
+    _=Depends(get_current_user),
 ):
-    query = select(FoodMenu).where(FoodMenu.school_id == school_id)
+    query = (
+        select(FoodMenu)
+        .where(FoodMenu.school_id == school_id)
+        .options(selectinload(FoodMenu.items))
+    )
     if level:
         query = query.where(FoodMenu.level == level)
     result = await db.execute(query.offset(skip).limit(limit))
@@ -127,16 +132,20 @@ async def get_current_menu(
     level: str,
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_teacher),
+    _=Depends(get_current_user),
 ):
     today = date.today()
     result = await db.execute(
-        select(FoodMenu).where(
+        select(FoodMenu)
+        .where(
             FoodMenu.school_id == school_id,
             FoodMenu.level == level,
             FoodMenu.start_date <= today,
             FoodMenu.end_date >= today,
-        ).order_by(FoodMenu.start_date.desc()).limit(1)
+        )
+        .options(selectinload(FoodMenu.items))
+        .order_by(FoodMenu.start_date.desc())
+        .limit(1)
     )
     menu = result.scalar_one_or_none()
     if menu is None:
@@ -166,8 +175,14 @@ async def create_menu(
         db.add(item)
 
     await db.commit()
-    await db.refresh(menu)
-    return menu
+
+    # Re-fetch with items loaded
+    result = await db.execute(
+        select(FoodMenu)
+        .where(FoodMenu.id == menu.id)
+        .options(selectinload(FoodMenu.items))
+    )
+    return result.scalar_one()
 
 
 @router.get("/menus/{menu_id}", response_model=FoodMenuResponse)
@@ -175,10 +190,12 @@ async def get_menu(
     menu_id: uuid.UUID,
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_teacher),
+    _=Depends(get_current_user),
 ):
     result = await db.execute(
-        select(FoodMenu).where(FoodMenu.id == menu_id, FoodMenu.school_id == school_id)
+        select(FoodMenu)
+        .where(FoodMenu.id == menu_id, FoodMenu.school_id == school_id)
+        .options(selectinload(FoodMenu.items))
     )
     menu = result.scalar_one_or_none()
     if menu is None:
@@ -203,8 +220,13 @@ async def update_menu(
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(menu, field, value)
     await db.commit()
-    await db.refresh(menu)
-    return menu
+
+    result2 = await db.execute(
+        select(FoodMenu)
+        .where(FoodMenu.id == menu_id)
+        .options(selectinload(FoodMenu.items))
+    )
+    return result2.scalar_one()
 
 
 @router.delete("/menus/{menu_id}")

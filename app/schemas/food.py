@@ -7,8 +7,8 @@ from pydantic import BaseModel, ConfigDict
 
 class FoodBase(BaseModel):
     name: str
-    details: Optional[str] = None
-    type: Optional[str] = None  # sopa, prato, sobremesa, lanche, bebida
+    description: Optional[str] = None
+    food_type: Optional[str] = None  # breakfast, lunch, snack, etc.
 
 
 class FoodCreate(FoodBase):
@@ -17,15 +17,15 @@ class FoodCreate(FoodBase):
 
 class FoodUpdate(BaseModel):
     name: Optional[str] = None
-    details: Optional[str] = None
-    type: Optional[str] = None
+    description: Optional[str] = None
+    food_type: Optional[str] = None
 
 
 class FoodResponse(FoodBase):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
     school_id: uuid.UUID
-    created_at: datetime
+    created_at: Optional[datetime] = None
 
 
 class FoodMenuItemBase(BaseModel):
@@ -66,6 +66,6 @@ class FoodMenuResponse(FoodMenuBase):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
     school_id: uuid.UUID
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     items: List[FoodMenuItemResponse] = []

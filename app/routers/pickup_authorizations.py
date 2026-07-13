@@ -4,71 +4,31 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func, select
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, get_school_id, require_school_admin, require_parent
-from app.models.base import Base
+from app.core.dependencies import get_current_user, get_school_id
+from app.models.pickup_auth import MealOrder, PickupAuthorization
 
 router = APIRouter(prefix="/pickup-authorizations", tags=["Pickup Authorizations"])
-
-
-# ─── Models (inline) ─────────────────────────────────────────────────────────
-
-class PickupAuthorization(Base):
-    __tablename__ = "pickup_authorizations"
-    __table_args__ = (
-        Index("ix_pickup_authorizations_school_id", "school_id"),
-        Index("ix_pickup_authorizations_child_id", "child_id"),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    school_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("schools.id", ondelete="RESTRICT"), nullable=False)
-    child_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("children.id", ondelete="CASCADE"), nullable=False)
-    authorized_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    relationship: Mapped[Optional[str]] = mapped_column(String(100))
-    phone: Mapped[Optional[str]] = mapped_column(String(50))
-    id_card_number: Mapped[Optional[str]] = mapped_column(String(100))
-    notes: Mapped[Optional[str]] = mapped_column(Text)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-
-class MealOrder(Base):
-    __tablename__ = "meal_orders"
-    __table_args__ = (
-        UniqueConstraint("school_id", "child_id", "order_date", "meal_type", name="uq_meal_order_child_date_type"),
-        Index("ix_meal_orders_school_id", "school_id"),
-        Index("ix_meal_orders_order_date", "order_date"),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    school_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("schools.id", ondelete="RESTRICT"), nullable=False)
-    child_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("children.id", ondelete="CASCADE"), nullable=False)
-    order_date: Mapped[date] = mapped_column(Date, nullable=False)
-    meal_type: Mapped[str] = mapped_column(String(50), default="lunch", nullable=False)
-    ordered: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 # ─── Schemas ─────────────────────────────────────────────────────────────────
 
 class PickupAuthCreate(BaseModel):
     child_id: uuid.UUID
-    authorized_name: str
+    authorized_person_name: str
     relationship: Optional[str] = None
-    phone: Optional[str] = None
+    mobile: Optional[str] = None
     id_card_number: Optional[str] = None
     notes: Optional[str] = None
 
 
 class PickupAuthUpdate(BaseModel):
-    authorized_name: Optional[str] = None
+    authorized_person_name: Optional[str] = None
     relationship: Optional[str] = None
-    phone: Optional[str] = None
+    mobile: Optional[str] = None
     id_card_number: Optional[str] = None
     notes: Optional[str] = None
     is_active: Optional[bool] = None
@@ -79,9 +39,9 @@ class PickupAuthOut(BaseModel):
     id: uuid.UUID
     school_id: uuid.UUID
     child_id: uuid.UUID
-    authorized_name: str
+    authorized_person_name: str
     relationship: Optional[str] = None
-    phone: Optional[str] = None
+    mobile: Optional[str] = None
     id_card_number: Optional[str] = None
     notes: Optional[str] = None
     is_active: bool
@@ -89,11 +49,11 @@ class PickupAuthOut(BaseModel):
     child_name: Optional[str] = None
 
 
-class MealOrderUpsert(BaseModel):
+class MealOrderCreate(BaseModel):
     child_id: uuid.UUID
     order_date: date
     meal_type: str = "lunch"
-    ordered: bool
+    quantity: int = 1
 
 
 class MealOrderOut(BaseModel):
@@ -102,6 +62,7 @@ class MealOrderOut(BaseModel):
     child_id: uuid.UUID
     order_date: date
     meal_type: str
+    quantity: int
     ordered: bool
     child_name: Optional[str] = None
 
@@ -141,16 +102,15 @@ async def list_pickup_authorizations(
     if child_id:
         query = query.where(PickupAuthorization.child_id == child_id)
 
-    result = await db.execute(query.order_by(PickupAuthorization.child_id, PickupAuthorization.authorized_name))
+    result = await db.execute(query.order_by(PickupAuthorization.child_id, PickupAuthorization.authorized_person_name))
     auths = result.scalars().all()
 
     # Bulk fetch child names
-    child_ids = list({a.child_id for a in auths})
+    child_ids_set = list({a.child_id for a in auths})
     child_names: dict = {}
-    if child_ids:
-        from app.models.person import Child
+    if child_ids_set:
         child_result = await db.execute(
-            select(Child.id, Child.first_name, Child.last_name).where(Child.id.in_(child_ids))
+            select(Child.id, Child.first_name, Child.last_name).where(Child.id.in_(child_ids_set))
         )
         child_names = {r.id: f"{r.first_name} {r.last_name}" for r in child_result}
 
@@ -176,7 +136,6 @@ async def create_pickup_authorization(
     await db.commit()
     await db.refresh(auth)
 
-    from app.models.person import Child
     child_result2 = await db.execute(select(Child).where(Child.id == body.child_id))
     child = child_result2.scalar_one_or_none()
     child_name = f"{child.first_name} {child.last_name}" if child else None
@@ -240,7 +199,7 @@ async def list_meal_orders(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    from app.models.person import ChildGuardian
+    from app.models.person import Child, ChildGuardian
 
     role = getattr(current_user, "_role", "parent")
     query = select(MealOrder).where(MealOrder.school_id == school_id, MealOrder.ordered == True)
@@ -267,25 +226,26 @@ async def list_meal_orders(
     result = await db.execute(query.order_by(MealOrder.order_date.asc()))
     orders = result.scalars().all()
 
-    child_ids = list({o.child_id for o in orders})
+    child_ids_set = list({o.child_id for o in orders})
     child_names: dict = {}
-    if child_ids:
+    if child_ids_set:
         from app.models.person import Child
         cr = await db.execute(
-            select(Child.id, Child.first_name, Child.last_name).where(Child.id.in_(child_ids))
+            select(Child.id, Child.first_name, Child.last_name).where(Child.id.in_(child_ids_set))
         )
         child_names = {r.id: f"{r.first_name} {r.last_name}" for r in cr}
 
     return [{**o.__dict__, "child_name": child_names.get(o.child_id)} for o in orders]
 
 
-@router.post("/meal-orders", response_model=MealOrderOut)
-async def upsert_meal_order(
-    body: MealOrderUpsert,
+@router.post("/meal-orders", response_model=MealOrderOut, status_code=status.HTTP_201_CREATED)
+async def create_meal_order(
+    body: MealOrderCreate,
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
+    # Upsert: update if exists, create if not
     existing = await db.execute(
         select(MealOrder).where(
             MealOrder.school_id == school_id,
@@ -295,10 +255,19 @@ async def upsert_meal_order(
         )
     )
     order = existing.scalar_one_or_none()
+    ordered = body.quantity > 0
     if order:
-        order.ordered = body.ordered
+        order.quantity = body.quantity
+        order.ordered = ordered
     else:
-        order = MealOrder(school_id=school_id, **body.model_dump())
+        order = MealOrder(
+            school_id=school_id,
+            child_id=body.child_id,
+            order_date=body.order_date,
+            meal_type=body.meal_type,
+            quantity=body.quantity,
+            ordered=ordered,
+        )
         db.add(order)
     await db.commit()
     await db.refresh(order)
@@ -307,13 +276,24 @@ async def upsert_meal_order(
 
 @router.get("/meal-orders/daily-counts", response_model=list[DailyMealCount])
 async def get_daily_meal_counts(
-    date_from: date,
-    date_to: date,
+    date: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    from sqlalchemy import func as sqlfunc
+    from datetime import date as dt_date
+    # Support both single date and date range
+    if date:
+        d = dt_date.fromisoformat(date)
+        q_from, q_to = d, d
+    elif date_from and date_to:
+        q_from = dt_date.fromisoformat(date_from)
+        q_to = dt_date.fromisoformat(date_to)
+    else:
+        q_from = q_to = dt_date.today()
+
     result = await db.execute(
         select(
             MealOrder.order_date,
@@ -323,8 +303,8 @@ async def get_daily_meal_counts(
         .where(
             MealOrder.school_id == school_id,
             MealOrder.ordered == True,
-            MealOrder.order_date >= date_from,
-            MealOrder.order_date <= date_to,
+            MealOrder.order_date >= q_from,
+            MealOrder.order_date <= q_to,
         )
         .group_by(MealOrder.order_date, MealOrder.meal_type)
         .order_by(MealOrder.order_date)
