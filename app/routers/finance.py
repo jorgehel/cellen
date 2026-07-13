@@ -504,6 +504,19 @@ async def cancel_invoice(
     return {"message": "Invoice cancelled", "id": str(invoice_id)}
 
 
+# ─── Payment Proof Upload ────────────────────────────────────────────────────
+
+@router.post("/payment-proof")
+async def upload_payment_proof(
+    file: UploadFile = File(...),
+    school_id: uuid.UUID = Depends(get_school_id),
+    _=Depends(require_school_admin),
+):
+    import uuid as _uuid
+    url = await save_upload(file, "payment-proofs", _uuid.uuid4())
+    return {"url": url}
+
+
 # ─── Multicaixa Reference Generation ─────────────────────────────────────────
 
 @router.post("/invoices/{invoice_id}/multicaixa", response_model=MulticaixaResponse)
@@ -663,6 +676,12 @@ async def create_payment(
     _=Depends(require_school_admin),
 ):
     from app.schemas.finance import PaymentAllocation as _PA
+
+    if not body.receipt_proof_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Comprovativo de pagamento obrigatório. Anexe o recibo antes de confirmar.",
+        )
 
     # Explicit invoice_ids targeting (bypasses oldest-first)
     if body.invoice_ids:

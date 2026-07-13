@@ -153,6 +153,7 @@ class Payment(Base):
     notes: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="normal")  # normal, reversed
     reverse_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    receipt_proof_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     invoice_links = relationship("PaymentInvoice", back_populates="payment", cascade="all, delete-orphan")

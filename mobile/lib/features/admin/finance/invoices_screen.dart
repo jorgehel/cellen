@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/api/api_client.dart';
@@ -408,6 +409,7 @@ class _RecordPaymentDialogState
   final _notesCtrl = TextEditingController();
   DateTime _paymentDate = DateTime.now();
   String _paymentMethod = 'multicaixa_express';
+  XFile? _proofFile;
   bool _isLoading = false;
   String? _error;
 
@@ -432,13 +434,22 @@ class _RecordPaymentDialogState
     super.dispose();
   }
 
+  Future<void> _pickProof() async {
+    final file = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (file != null) setState(() => _proofFile = file);
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
+    if (_proofFile == null) {
+      setState(() => _error = 'Comprovativo de pagamento obrigatório.');
+      return;
+    }
+
     final employeeId = ref.read(authProvider).employeeId;
     if (employeeId == null) {
-      setState(() =>
-          _error = 'Funcionário não associado a esta conta');
+      setState(() => _error = 'Funcionário não associado a esta conta');
       return;
     }
 
@@ -449,6 +460,16 @@ class _RecordPaymentDialogState
 
     try {
       final api = ref.read(apiClientProvider);
+
+      // 1. Upload proof first
+      final uploadResult = await api.uploadFile(
+        '/finance/payment-proof',
+        _proofFile!,
+        fieldName: 'file',
+      ) as Map<String, dynamic>;
+      final proofUrl = uploadResult['url'] as String;
+
+      // 2. Create payment
       final amount = double.tryParse(_amountCtrl.text) ?? 0.0;
       final dateStr =
           '${_paymentDate.year.toString().padLeft(4, '0')}-${_paymentDate.month.toString().padLeft(2, '0')}-${_paymentDate.day.toString().padLeft(2, '0')}';
@@ -460,6 +481,7 @@ class _RecordPaymentDialogState
         'payment_date': dateStr,
         'payment_method': _paymentMethod,
         'received_by': employeeId,
+        'receipt_proof_url': proofUrl,
         if (_notesCtrl.text.trim().isNotEmpty)
           'notes': _notesCtrl.text.trim(),
       });
@@ -548,6 +570,72 @@ class _RecordPaymentDialogState
                   prefixIcon: Icon(Icons.notes),
                 ),
                 maxLines: 2,
+              ),
+              const SizedBox(height: 12),
+              // Mandatory proof of payment
+              InkWell(
+                onTap: _isLoading ? null : _pickProof,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 14),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: _proofFile == null
+                          ? Theme.of(context).colorScheme.error
+                          : Theme.of(context).colorScheme.primary,
+                      width: _proofFile == null ? 1 : 1.5,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _proofFile == null
+                            ? Icons.attach_file
+                            : Icons.check_circle_outline,
+                        color: _proofFile == null
+                            ? Theme.of(context).colorScheme.error
+                            : Theme.of(context).colorScheme.primary,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Comprovativo *',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: _proofFile == null
+                                    ? Theme.of(context).colorScheme.error
+                                    : Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _proofFile == null
+                                  ? 'Anexar recibo ou transferência'
+                                  : _proofFile!.name,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: _proofFile == null
+                                    ? Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant
+                                    : Theme.of(context).colorScheme.primary,
+                                fontWeight: _proofFile != null
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
               if (_error != null) ...[
                 const SizedBox(height: 12),

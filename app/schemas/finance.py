@@ -181,6 +181,7 @@ class PaymentBase(BaseModel):
     amount: DecimalFloat
     payment_method: Optional[str] = None
     notes: Optional[str] = None
+    receipt_proof_url: Optional[str] = None
 
 
 class PaymentCreate(PaymentBase):
