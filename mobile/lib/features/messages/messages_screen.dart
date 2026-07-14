@@ -284,6 +284,9 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
 
   /// Shows a loading indicator, fetches users, then shows the real dialog or an error.
   Future<void> _showNewThreadDialog() async {
+    // Capture the BuildContext and Navigator before the async gap.
+    final navigator = Navigator.of(context);
+
     // 1. Show loading dialog
     showDialog(
       context: context,
@@ -304,10 +307,10 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
     final (:users, :error) = await _fetchUsersForNewThread();
 
     // 3. Handle result. If screen is gone, do nothing.
-    if (!mounted) return;
+    if (!navigator.mounted) return;
 
     // Dismiss loading dialog
-    Navigator.pop(context);
+    navigator.pop();
 
     // Show error or the actual dialog
     if (error != null) {
