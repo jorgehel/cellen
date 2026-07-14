@@ -569,7 +569,7 @@ async def parent_submit_payment(
     payment = Payment(
         school_id=school_id,
         child_id=invoice.child_id,
-        received_by=guardian_id or current_user.id,
+        received_by=current_user.id,
         payment_date=date.today(),
         amount=body.amount,
         payment_method=body.payment_method or "multicaixa",

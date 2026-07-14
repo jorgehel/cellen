@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -183,8 +185,8 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                 // Preview
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    xFile.path,
+                  child: Image.file(
+                    File(xFile.path),
                     height: 150,
                     width: double.infinity,
                     fit: BoxFit.cover,

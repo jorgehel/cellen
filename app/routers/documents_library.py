@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -89,12 +90,14 @@ async def upload_document(
 
     # Validate file type for documents
     content_type = file.content_type or ""
-    if content_type not in ALLOWED_DOCUMENT_TYPES and "application/octet-stream" not in content_type:
-        if content_type not in ALLOWED_DOCUMENT_TYPES:
-            raise HTTPException(
-                status_code=415,
-                detail=f"File type '{content_type}' not allowed for documents. Use PDF, Word, or image files.",
-            )
+    if content_type not in ALLOWED_DOCUMENT_TYPES and content_type != "application/octet-stream":
+        raise HTTPException(
+            status_code=415,
+            detail=f"File type '{content_type}' not allowed for documents. Use PDF, Word, or image files.",
+        )
+    # Override content_type for storage validation if it's octet-stream
+    if content_type == "application/octet-stream":
+        file.content_type = "application/pdf"  # fallback for storage validation
 
     file_url = await save_upload(file, "documents", school_id)
 
@@ -105,7 +108,7 @@ async def upload_document(
         description=description,
         file_url=file_url,
         file_name=file.filename or name,
-        file_type=file.content_type,
+        file_type=Path(file.filename).suffix.lstrip('.').lower() if file.filename else None,
         category=category,
         target=target,
         child_id=child_id,

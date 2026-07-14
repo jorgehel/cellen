@@ -6,29 +6,8 @@ import '../../core/api/api_client.dart';
 import '../../core/auth/auth_provider.dart';
 
 // ---------------------------------------------------------------------------
-// Model
+// Model — matches backend TripAuthOut schema
 // ---------------------------------------------------------------------------
-class TripResponse {
-  final String childId;
-  final String? childName;
-  final bool authorized;
-  final String? notes;
-
-  const TripResponse({
-    required this.childId,
-    this.childName,
-    required this.authorized,
-    this.notes,
-  });
-
-  factory TripResponse.fromJson(Map<String, dynamic> json) => TripResponse(
-        childId: json['child_id']?.toString() ?? '',
-        childName: json['child_name'] as String?,
-        authorized: json['authorized'] as bool? ?? false,
-        notes: json['notes'] as String?,
-      );
-}
-
 class TripAuth {
   final String id;
   final String title;
@@ -38,7 +17,8 @@ class TripAuth {
   final String? departureTime;
   final String? returnTime;
   final DateTime? deadlineDate;
-  final List<TripResponse> responses;
+  final String? childId;
+  final String? parentResponse; // null, "approved", "denied"
 
   const TripAuth({
     required this.id,
@@ -49,27 +29,17 @@ class TripAuth {
     this.departureTime,
     this.returnTime,
     this.deadlineDate,
-    required this.responses,
+    this.childId,
+    this.parentResponse,
   });
 
-  int get respondedCount => responses.length;
-
-  /// For parent view: check if a specific child has responded
-  TripResponse? responseForChild(String childId) {
-    for (final r in responses) {
-      if (r.childId == childId) return r;
-    }
-    return null;
-  }
+  bool get isResponded => parentResponse == 'approved' || parentResponse == 'denied';
+  bool get isApproved => parentResponse == 'approved';
 
   factory TripAuth.fromJson(Map<String, dynamic> json) {
-    final responsesList = (json['responses'] as List?)
-            ?.map((e) => TripResponse.fromJson(e as Map<String, dynamic>))
-            .toList() ??
-        [];
     return TripAuth(
       id: json['id']?.toString() ?? '',
-      title: json['title'] as String? ?? '',
+      title: json['title'] as String? ?? json['destination'] as String? ?? 'Visita',
       description: json['description'] as String?,
       tripDate: json['trip_date'] != null
           ? DateTime.tryParse(json['trip_date'] as String) ?? DateTime.now()
@@ -80,7 +50,8 @@ class TripAuth {
       deadlineDate: json['deadline_date'] != null
           ? DateTime.tryParse(json['deadline_date'] as String)
           : null,
-      responses: responsesList,
+      childId: json['child_id']?.toString(),
+      parentResponse: json['parent_response'] as String?,
     );
   }
 }
@@ -176,12 +147,14 @@ class TripAuthorizationsScreen extends ConsumerWidget {
                 if (isParent) {
                   return _ParentTripCard(
                     trip: auth,
-                    onResponded: () => ref.invalidate(tripAuthorizationsProvider),
+                    onResponded: () =>
+                        ref.invalidate(tripAuthorizationsProvider),
                   );
                 }
                 return _AdminTripCard(
                   trip: auth,
-                  onDeleted: () => ref.invalidate(tripAuthorizationsProvider),
+                  onDeleted: () =>
+                      ref.invalidate(tripAuthorizationsProvider),
                 );
               },
             ),
@@ -240,8 +213,7 @@ class _AdminTripCard extends ConsumerWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Text('Passada',
-                        style:
-                            TextStyle(fontSize: 11, color: Colors.grey)),
+                        style: TextStyle(fontSize: 11, color: Colors.grey)),
                   ),
                 PopupMenuButton<String>(
                   onSelected: (action) async {
@@ -309,16 +281,8 @@ class _AdminTripCard extends ConsumerWidget {
                       color: Theme.of(context).colorScheme.onSurfaceVariant)),
             ],
             const SizedBox(height: 10),
-            Row(
-              children: [
-                const Icon(Icons.how_to_reg_outlined,
-                    size: 16, color: Colors.teal),
-                const SizedBox(width: 6),
-                Text('${trip.respondedCount} respostas',
-                    style: const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w500)),
-              ],
-            ),
+            if (trip.parentResponse != null)
+              _ResponseBadge(response: trip.parentResponse!),
           ],
         ),
       ),
@@ -327,7 +291,7 @@ class _AdminTripCard extends ConsumerWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Parent card with per-child respond buttons
+// Parent card — single respond button per trip
 // ---------------------------------------------------------------------------
 class _ParentTripCard extends ConsumerStatefulWidget {
   final TripAuth trip;
@@ -341,36 +305,14 @@ class _ParentTripCard extends ConsumerStatefulWidget {
 
 class _ParentTripCardState extends ConsumerState<_ParentTripCard> {
   bool _isResponding = false;
-  List<Map<String, dynamic>>? _myChildren;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadChildren();
-  }
-
-  Future<void> _loadChildren() async {
-    try {
-      final api = ref.read(apiClientProvider);
-      final data = await api.get('/children/my') as List;
-      if (mounted) {
-        setState(() {
-          _myChildren = data.cast<Map<String, dynamic>>();
-        });
-      }
-    } catch (_) {
-      // Silently fail — buttons just won't show
-    }
-  }
-
-  Future<void> _respond(String childId, bool authorized) async {
+  Future<void> _respond(bool authorize) async {
     setState(() => _isResponding = true);
     try {
       final api = ref.read(apiClientProvider);
       await api.post('/trip-authorizations/${widget.trip.id}/respond',
           data: {
-            'child_id': childId,
-            'authorized': authorized,
+            'response': authorize ? 'approved' : 'denied',
           });
       widget.onResponded();
     } catch (e) {
@@ -389,16 +331,11 @@ class _ParentTripCardState extends ConsumerState<_ParentTripCard> {
     final dateStr = DateFormat('dd/MM/yyyy').format(widget.trip.tripDate);
     final isDeadlinePast = widget.trip.deadlineDate != null &&
         widget.trip.deadlineDate!.isBefore(DateTime.now());
-
-    // Determine per-child response state
-    final children = _myChildren ?? [];
-    final allResponded = children.isNotEmpty &&
-        children.every((c) =>
-            widget.trip.responseForChild(c['id']?.toString() ?? '') != null);
+    final hasResponded = widget.trip.isResponded;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      elevation: allResponded ? 1 : 3,
+      elevation: hasResponded ? 1 : 3,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
       ),
@@ -438,120 +375,88 @@ class _ParentTripCardState extends ConsumerState<_ParentTripCard> {
                       color:
                           Theme.of(context).colorScheme.onSurfaceVariant)),
             ],
-            // Per-child response section
-            if (children.isNotEmpty) ...[
-              const Divider(height: 20),
-              ...children.map((child) {
-                final childId = child['id']?.toString() ?? '';
-                final childName =
-                    '${child['first_name'] ?? ''} ${child['last_name'] ?? ''}'.trim();
-                final resp = widget.trip.responseForChild(childId);
-                final hasResponded = resp != null;
-
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (children.length > 1)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
-                          child: Text(childName,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w600, fontSize: 13)),
-                        ),
-                      if (hasResponded)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: resp.authorized
-                                ? Colors.green.shade50
-                                : Colors.red.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                resp.authorized
-                                    ? Icons.check_circle
-                                    : Icons.cancel,
-                                size: 16,
-                                color: resp.authorized
-                                    ? Colors.green.shade700
-                                    : Colors.red.shade700,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                resp.authorized
-                                    ? 'Autorizado'
-                                    : 'Não Autorizado',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: resp.authorized
-                                      ? Colors.green.shade700
-                                      : Colors.red.shade700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      else if (!isDeadlinePast)
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: _isResponding
-                                    ? null
-                                    : () => _respond(childId, false),
-                                icon: const Icon(Icons.close,
-                                    color: Colors.red, size: 16),
-                                label: const Text('Não',
-                                    style: TextStyle(
-                                        color: Colors.red, fontSize: 12)),
-                                style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(color: Colors.red),
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 6),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: FilledButton.icon(
-                                onPressed: _isResponding
-                                    ? null
-                                    : () => _respond(childId, true),
-                                icon:
-                                    const Icon(Icons.check, size: 16),
-                                label: const Text('Autorizar',
-                                    style: TextStyle(fontSize: 12)),
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: Colors.green,
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 6),
-                                ),
-                              ),
-                            ),
-                          ],
-                        )
-                      else
-                        Text(
-                          'Prazo ultrapassado',
-                          style: TextStyle(
-                              color: Colors.red.shade600,
-                              fontSize: 12,
-                              fontStyle: FontStyle.italic),
-                        ),
-                    ],
+            const Divider(height: 20),
+            if (hasResponded)
+              _ResponseBadge(response: widget.trip.parentResponse!)
+            else if (!isDeadlinePast)
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _isResponding ? null : () => _respond(false),
+                      icon: const Icon(Icons.close, color: Colors.red, size: 16),
+                      label: const Text('Não Autorizar',
+                          style: TextStyle(color: Colors.red, fontSize: 12)),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.red),
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                      ),
+                    ),
                   ),
-                );
-              }),
-            ],
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _isResponding ? null : () => _respond(true),
+                      icon: const Icon(Icons.check, size: 16),
+                      label: const Text('Autorizar',
+                          style: TextStyle(fontSize: 12)),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            else
+              Text(
+                'Prazo ultrapassado',
+                style: TextStyle(
+                    color: Colors.red.shade600,
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic),
+              ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Response badge
+// ---------------------------------------------------------------------------
+class _ResponseBadge extends StatelessWidget {
+  final String response;
+  const _ResponseBadge({required this.response});
+
+  @override
+  Widget build(BuildContext context) {
+    final isApproved = response == 'approved';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: isApproved ? Colors.green.shade50 : Colors.red.shade50,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isApproved ? Icons.check_circle : Icons.cancel,
+            size: 16,
+            color: isApproved ? Colors.green.shade700 : Colors.red.shade700,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            isApproved ? 'Autorizado' : 'Não Autorizado',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: isApproved ? Colors.green.shade700 : Colors.red.shade700,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -601,11 +506,14 @@ class _CreateTripDialogState extends ConsumerState<_CreateTripDialog> {
       final api = ref.read(apiClientProvider);
       await api.post('/trip-authorizations', data: {
         'title': _titleCtrl.text.trim(),
-        if (_descCtrl.text.trim().isNotEmpty) 'description': _descCtrl.text.trim(),
+        if (_descCtrl.text.trim().isNotEmpty)
+          'description': _descCtrl.text.trim(),
         'trip_date':
             '${_tripDate.year.toString().padLeft(4, '0')}-${_tripDate.month.toString().padLeft(2, '0')}-${_tripDate.day.toString().padLeft(2, '0')}',
-        if (_destCtrl.text.trim().isNotEmpty) 'destination': _destCtrl.text.trim(),
-        if (_departure != null) 'departure_time': '${_fmtTime(_departure!)}:00',
+        if (_destCtrl.text.trim().isNotEmpty)
+          'destination': _destCtrl.text.trim(),
+        if (_departure != null)
+          'departure_time': '${_fmtTime(_departure!)}:00',
         if (_returnTime != null) 'return_time': '${_fmtTime(_returnTime!)}:00',
         if (_deadline != null)
           'deadline_date':

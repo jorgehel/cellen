@@ -41,6 +41,9 @@ class TripAuthOut(BaseModel):
     destination: Optional[str] = None
     description: Optional[str] = None
     child_id: Optional[uuid.UUID] = None
+    departure_time: Optional[time] = None
+    return_time: Optional[time] = None
+    deadline_date: Optional[date] = None
     parent_response: Optional[str] = None
     created_at: Optional[datetime] = None
 

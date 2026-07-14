@@ -63,6 +63,7 @@ async def delete_file(url: str) -> None:
     # Strip leading slash
     relative = url.lstrip("/")
     # relative is like "media/entity_type/entity_id/filename"
-    full_path = Path(settings.MEDIA_DIR).parent / relative
+    # relative is "media/entity_type/entity_id/filename" — strip the "media/" prefix
+    full_path = Path(settings.MEDIA_DIR) / relative.removeprefix("media/").removeprefix("media\\")
     if full_path.exists():
         full_path.unlink()
