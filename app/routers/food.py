@@ -43,7 +43,12 @@ async def create_food(
     db: AsyncSession = Depends(get_db),
     _=Depends(require_school_admin),
 ):
-    food = Food(school_id=school_id, **body.model_dump())
+    food = Food(
+        school_id=school_id,
+        name=body.name,
+        details=body.description,
+        type=body.food_type,
+    )
     db.add(food)
     await db.commit()
     await db.refresh(food)
@@ -80,7 +85,13 @@ async def update_food(
     food = result.scalar_one_or_none()
     if food is None:
         raise HTTPException(status_code=404, detail="Food not found")
-    for field, value in body.model_dump(exclude_unset=True).items():
+    updates = body.model_dump(exclude_unset=True)
+    # Map API field names to DB column names
+    if "description" in updates:
+        food.details = updates.pop("description")
+    if "food_type" in updates:
+        food.type = updates.pop("food_type")
+    for field, value in updates.items():
         setattr(food, field, value)
     await db.commit()
     await db.refresh(food)

@@ -17,7 +17,8 @@ router = APIRouter(prefix="/trip-authorizations", tags=["Trip Authorizations"])
 # ─── Schemas ─────────────────────────────────────────────────────────────────
 
 class TripAuthCreate(BaseModel):
-    title: str
+    child_id: Optional[uuid.UUID] = None
+    title: Optional[str] = None
     trip_date: date
     destination: Optional[str] = None
     description: Optional[str] = None
@@ -27,39 +28,47 @@ class TripAuthCreate(BaseModel):
     target_turma_id: Optional[uuid.UUID] = None
 
 
-class TripResponseCreate(BaseModel):
-    child_id: uuid.UUID
-    authorized: bool
-    notes: Optional[str] = None
-
-
-class TripResponseOut(BaseModel):
-    model_config = {"from_attributes": True}
-    id: uuid.UUID
-    authorization_id: uuid.UUID
-    child_id: uuid.UUID
-    guardian_id: uuid.UUID
-    authorized: bool
-    notes: Optional[str] = None
-    responded_at: Optional[datetime] = None
-    child_name: Optional[str] = None
+class TripRespondBody(BaseModel):
+    response: str  # "approved" or "denied"
 
 
 class TripAuthOut(BaseModel):
     model_config = {"from_attributes": True}
     id: uuid.UUID
     school_id: uuid.UUID
-    created_by: uuid.UUID
-    title: str
-    description: Optional[str] = None
+    title: Optional[str] = None
     trip_date: date
     destination: Optional[str] = None
-    departure_time: Optional[time] = None
-    return_time: Optional[time] = None
-    deadline_date: Optional[date] = None
-    target_turma_id: Optional[uuid.UUID] = None
+    description: Optional[str] = None
+    child_id: Optional[uuid.UUID] = None
+    parent_response: Optional[str] = None
     created_at: Optional[datetime] = None
-    responses: List[TripResponseOut] = []
+
+
+class TripRespondOut(BaseModel):
+    id: uuid.UUID
+    parent_response: str
+    response_date: Optional[datetime] = None
+
+
+# ─── Helpers ─────────────────────────────────────────────────────────────────
+
+def _parent_response_label(authorized: Optional[bool]) -> Optional[str]:
+    if authorized is None:
+        return "pending"
+    return "approved" if authorized else "denied"
+
+
+async def _get_trip_response_for_child(
+    db: AsyncSession, trip_id: uuid.UUID, child_id: uuid.UUID
+) -> Optional[TripAuthorizationResponse]:
+    result = await db.execute(
+        select(TripAuthorizationResponse).where(
+            TripAuthorizationResponse.authorization_id == trip_id,
+            TripAuthorizationResponse.child_id == child_id,
+        )
+    )
+    return result.scalar_one_or_none()
 
 
 # ─── Endpoints ───────────────────────────────────────────────────────────────
@@ -70,32 +79,23 @@ async def list_trip_authorizations(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    query = (
+    result = await db.execute(
         select(TripAuthorization)
         .where(TripAuthorization.school_id == school_id)
         .order_by(TripAuthorization.trip_date.desc())
     )
-
-    role = getattr(current_user, "_role", "parent")
-
-    # Parents see all trips (they can filter relevant ones on the client)
-    # but we enrich responses with child names
-    result = await db.execute(query)
     trips = result.scalars().unique().all()
 
     out = []
     for trip in trips:
-        trip_dict = {**trip.__dict__}
-        enriched_responses = []
-        for r in trip.responses:
-            rd = {**r.__dict__}
-            # Enrich child name
-            from app.models.person import Child
-            child_result = await db.execute(select(Child.first_name, Child.last_name).where(Child.id == r.child_id))
-            row = child_result.one_or_none()
-            rd["child_name"] = f"{row[0]} {row[1]}" if row else None
-            enriched_responses.append(rd)
-        trip_dict["responses"] = enriched_responses
+        trip_dict = {c.key: getattr(trip, c.key) for c in trip.__table__.columns}
+        # Compute parent_response from responses if trip has a child_id
+        parent_response = None
+        if trip.child_id:
+            resp = await _get_trip_response_for_child(db, trip.id, trip.child_id)
+            if resp is not None:
+                parent_response = _parent_response_label(resp.authorized)
+        trip_dict["parent_response"] = parent_response
         out.append(trip_dict)
 
     return out
@@ -108,10 +108,12 @@ async def create_trip_authorization(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_teacher),
 ):
+    title = body.title or (f"Visita a {body.destination}" if body.destination else "Visita de estudo")
     trip = TripAuthorization(
         school_id=school_id,
         created_by=current_user.id,
-        title=body.title,
+        child_id=body.child_id,
+        title=title,
         trip_date=body.trip_date,
         destination=body.destination,
         description=body.description,
@@ -123,7 +125,10 @@ async def create_trip_authorization(
     db.add(trip)
     await db.commit()
     await db.refresh(trip)
-    return {**trip.__dict__, "responses": []}
+
+    trip_dict = {c.key: getattr(trip, c.key) for c in trip.__table__.columns}
+    trip_dict["parent_response"] = None
+    return trip_dict
 
 
 @router.get("/{trip_id}", response_model=TripAuthOut)
@@ -143,27 +148,33 @@ async def get_trip_authorization(
     if trip is None:
         raise HTTPException(status_code=404, detail="Trip authorization not found")
 
-    enriched_responses = []
-    for r in trip.responses:
-        rd = {**r.__dict__}
-        from app.models.person import Child
-        child_result = await db.execute(select(Child.first_name, Child.last_name).where(Child.id == r.child_id))
-        row = child_result.one_or_none()
-        rd["child_name"] = f"{row[0]} {row[1]}" if row else None
-        enriched_responses.append(rd)
-
-    return {**trip.__dict__, "responses": enriched_responses}
+    trip_dict = {c.key: getattr(trip, c.key) for c in trip.__table__.columns}
+    parent_response = None
+    if trip.child_id:
+        resp = await _get_trip_response_for_child(db, trip.id, trip.child_id)
+        if resp is not None:
+            parent_response = _parent_response_label(resp.authorized)
+    trip_dict["parent_response"] = parent_response
+    return trip_dict
 
 
-@router.post("/{trip_id}/respond", response_model=TripResponseOut, status_code=status.HTTP_201_CREATED)
+@router.post("/{trip_id}/respond", response_model=TripRespondOut, status_code=status.HTTP_200_OK)
 async def respond_to_trip_authorization(
     trip_id: uuid.UUID,
-    body: TripResponseCreate,
+    body: TripRespondBody,
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     from app.models.person import ChildGuardian
+
+    if body.response not in ("approved", "denied"):
+        raise HTTPException(status_code=422, detail="response must be 'approved' or 'denied'")
+
+    # Only parents/guardians can respond
+    guardian_id = getattr(current_user, "guardian_id", None)
+    if guardian_id is None:
+        raise HTTPException(status_code=403, detail="Only parents can respond to trip authorizations")
 
     # Verify trip exists
     result = await db.execute(
@@ -176,48 +187,50 @@ async def respond_to_trip_authorization(
     if trip is None:
         raise HTTPException(status_code=404, detail="Trip authorization not found")
 
-    # Verify caller is a parent/guardian
-    guardian_id = getattr(current_user, "guardian_id", None)
-    if guardian_id is None:
-        raise HTTPException(status_code=403, detail="Only parents can respond to trip authorizations")
-
-    # Verify guardian is linked to the child
-    link_result = await db.execute(
-        select(ChildGuardian).where(
-            ChildGuardian.guardian_id == guardian_id,
-            ChildGuardian.child_id == body.child_id,
+    # Determine child_id: use the trip's stored child_id or find parent's first child
+    child_id = trip.child_id
+    if child_id is None:
+        # Fallback: find any child linked to this guardian for this school
+        link_result = await db.execute(
+            select(ChildGuardian).where(ChildGuardian.guardian_id == guardian_id).limit(1)
         )
-    )
-    if link_result.scalar_one_or_none() is None:
-        raise HTTPException(status_code=403, detail="You are not authorized for this child")
-
-    # Check for existing response
-    existing = await db.execute(
-        select(TripAuthorizationResponse).where(
-            TripAuthorizationResponse.authorization_id == trip_id,
-            TripAuthorizationResponse.child_id == body.child_id,
+        link = link_result.scalar_one_or_none()
+        if link is None:
+            raise HTTPException(status_code=403, detail="You are not authorized for any child")
+        child_id = link.child_id
+    else:
+        # Verify guardian is linked to the trip's child
+        link_result = await db.execute(
+            select(ChildGuardian).where(
+                ChildGuardian.guardian_id == guardian_id,
+                ChildGuardian.child_id == child_id,
+            )
         )
-    )
-    if existing.scalar_one_or_none() is not None:
+        if link_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=403, detail="You are not authorized for this child")
+
+    # Check for existing response (finality)
+    existing = await _get_trip_response_for_child(db, trip_id, child_id)
+    if existing is not None:
         raise HTTPException(status_code=409, detail="Response already submitted for this child")
 
+    authorized = body.response == "approved"
     response = TripAuthorizationResponse(
         authorization_id=trip_id,
         school_id=school_id,
-        child_id=body.child_id,
+        child_id=child_id,
         guardian_id=guardian_id,
-        authorized=body.authorized,
-        notes=body.notes,
+        authorized=authorized,
     )
     db.add(response)
     await db.commit()
     await db.refresh(response)
 
-    from app.models.person import Child
-    child_result = await db.execute(select(Child.first_name, Child.last_name).where(Child.id == body.child_id))
-    row = child_result.one_or_none()
-
-    return {**response.__dict__, "child_name": f"{row[0]} {row[1]}" if row else None}
+    return TripRespondOut(
+        id=response.id,
+        parent_response=body.response,
+        response_date=response.responded_at,
+    )
 
 
 @router.delete("/{trip_id}", status_code=status.HTTP_200_OK)

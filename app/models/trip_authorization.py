@@ -23,6 +23,9 @@ class TripAuthorization(Base):
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("employees.id", ondelete="RESTRICT"), nullable=False
     )
+    child_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("children.id", ondelete="SET NULL"), nullable=True
+    )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     trip_date: Mapped[date] = mapped_column(Date, nullable=False)

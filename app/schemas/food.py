@@ -2,13 +2,13 @@ import uuid
 from datetime import date, datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class FoodBase(BaseModel):
     name: str
-    details: Optional[str] = None
-    type: Optional[str] = None  # breakfast, lunch, snack, etc.
+    description: Optional[str] = None
+    food_type: Optional[str] = None  # breakfast, lunch, snack, etc.
 
 
 class FoodCreate(FoodBase):
@@ -17,14 +17,18 @@ class FoodCreate(FoodBase):
 
 class FoodUpdate(BaseModel):
     name: Optional[str] = None
-    details: Optional[str] = None
-    type: Optional[str] = None
+    description: Optional[str] = None
+    food_type: Optional[str] = None
 
 
-class FoodResponse(FoodBase):
-    model_config = ConfigDict(from_attributes=True)
+class FoodResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
     id: uuid.UUID
     school_id: uuid.UUID
+    name: str
+    # DB columns are `details` and `type`; API exposes them as `description` and `food_type`
+    description: Optional[str] = Field(None, validation_alias='details')
+    food_type: Optional[str] = Field(None, validation_alias='type')
     created_at: Optional[datetime] = None
 
 
