@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, get_school_id, require_parent, require_school_admin, require_teacher
+from app.core.dependencies import get_current_user, get_school_id, require_parent, require_teacher
 
 router = APIRouter(prefix="/appointments", tags=["Appointments"])
 

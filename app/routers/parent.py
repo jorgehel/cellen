@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, get_school_id, require_parent
+from app.core.dependencies import get_school_id, require_parent
 from app.models.caderneta import Caderneta
 from app.models.finance import Invoice
 from app.models.person import Child, ChildGuardian
@@ -40,14 +40,14 @@ async def parent_get_children(
             .where(
                 ChildGuardian.guardian_id == guardian_id,
                 Child.school_id == school_id,
-                Child.is_active == True,
+                Child.is_active,
             )
         )
         return result.scalars().all()
 
     # school_admin / platform_admin — return all active children
     result = await db.execute(
-        select(Child).where(Child.school_id == school_id, Child.is_active == True)
+        select(Child).where(Child.school_id == school_id, Child.is_active)
     )
     return result.scalars().all()
 
@@ -71,7 +71,7 @@ async def parent_get_cadernetas(
             .where(
                 ChildGuardian.guardian_id == guardian_id,
                 Child.school_id == school_id,
-                Child.is_active == True,
+                Child.is_active,
             )
         )
         child_ids = [row[0] for row in child_ids_result.all()]
@@ -121,7 +121,7 @@ async def parent_get_invoices(
             .where(
                 ChildGuardian.guardian_id == guardian_id,
                 Child.school_id == school_id,
-                Child.is_active == True,
+                Child.is_active,
             )
         )
         child_ids = [row[0] for row in child_ids_result.all()]

@@ -12,6 +12,36 @@ from app.models.person import Child
 from app.schemas.finance import PaymentAllocation
 
 
+async def _generate_and_set_multicaixa_ref(db: AsyncSession, school_id: UUID, invoice: Invoice):
+    """Generates and sets a Multicaixa reference on an invoice object if it doesn't have one."""
+    from app.models.school import School
+
+    if invoice.multicaixa_ref and invoice.multicaixa_entity:
+        return
+
+    # Determine entidade from school NIF (last 5 digits) or fallback
+    school_result = await db.execute(select(School).where(School.id == school_id))
+    school = school_result.scalar_one_or_none()
+    nif = (school.nif or "") if school else ""
+    # Strip non-digits and take last 5, fallback to "11111"
+    nif_digits = "".join(c for c in nif if c.isdigit())
+    entidade = nif_digits[-5:] if len(nif_digits) >= 5 else "11111"
+
+    # Generate sequential reference: count of all invoices for this school
+    # Note: This is a simplified sequential generator. For high concurrency, a dedicated sequence or a more robust
+    # locking mechanism might be needed to prevent race conditions.
+    count_result = await db.execute(
+        select(func.count(Invoice.id)).where(
+            Invoice.school_id == school_id,
+        )
+    )
+    seq_num = (count_result.scalar() or 0) + 1  # Increment based on current count
+    referencia = str(seq_num).zfill(9)
+
+    invoice.multicaixa_entity = entidade
+    invoice.multicaixa_ref = referencia
+
+
 async def recalculate_invoice_status(db: AsyncSession, invoice_id: UUID) -> None:
     """Recalculate invoice status based on total payments applied."""
     result = await db.execute(

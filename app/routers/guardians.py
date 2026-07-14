@@ -7,7 +7,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_school_id, require_school_admin, require_teacher
+from app.core.dependencies import get_school_id, require_school_admin
 from app.core.security import hash_password
 from app.models.person import Child, ChildGuardian, Guardian
 from app.models.user import User

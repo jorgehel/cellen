@@ -283,29 +283,70 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
   }
 
   Future<void> _showNewThreadDialog() async {
-    // Load available users to message
+    // Show a loading dialog immediately
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('A carregar utilizadores...'),
+          ],
+        ),
+      ),
+    );
+
+    // --- Data Fetching ---
     List<Map<String, dynamic>> users = [];
+    String? error;
     try {
       final api = ref.read(apiClientProvider);
+      // Prefer the more comprehensive endpoint
       final data = await api.get('/schools/users') as List;
       users = data.cast<Map<String, dynamic>>();
-    } catch (_) {
-      // If user listing fails (non-admin), try employees + guardians
+    } catch (e) {
+      // If the primary endpoint fails, try the fallback for non-admins
       try {
         final api = ref.read(apiClientProvider);
         final empData = await api.get('/employees') as List;
-        for (final e in empData) {
-          final m = e as Map<String, dynamic>;
+        for (final item in empData) {
+          final m = item as Map<String, dynamic>;
           users.add({
             'id': m['id'],
             'username': '${m['first_name'] ?? ''} ${m['last_name'] ?? ''}'.trim(),
             'role': m['employee_type'] ?? 'staff',
           });
         }
-      } catch (_) {}
+      } catch (e2) {
+        error = 'Falha ao carregar a lista de destinatários.\n'
+            'Por favor, tente novamente mais tarde.\n\n'
+            'Detalhes: $e2';
+      }
     }
 
     if (!mounted) return;
+    Navigator.pop(context); // Dismiss loading dialog
+
+    // --- Show Error or Main Dialog ---
+    if (error != null) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Erro'),
+          content: Text(error!),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            )
+          ],
+        ),
+      );
+      return;
+    }
 
     final subjectCtrl = TextEditingController();
     final messageCtrl = TextEditingController();

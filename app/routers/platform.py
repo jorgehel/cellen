@@ -1,5 +1,4 @@
 import uuid
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
@@ -44,13 +43,13 @@ async def list_schools(
     for school in schools:
         # Count active users
         users_count_result = await db.execute(
-            select(func.count(User.id)).where(User.school_id == school.id, User.is_active == True)
+            select(func.count(User.id)).where(User.school_id == school.id, User.is_active)
         )
         users_count = users_count_result.scalar_one()
 
         # Count children
         children_count_result = await db.execute(
-            select(func.count(Child.id)).where(Child.school_id == school.id, Child.is_active == True)
+            select(func.count(Child.id)).where(Child.school_id == school.id, Child.is_active)
         )
         children_count = children_count_result.scalar_one()
 
@@ -182,17 +181,17 @@ async def platform_stats(
     total_schools = total_schools_result.scalar_one()
 
     active_schools_result = await db.execute(
-        select(func.count(School.id)).where(School.is_active == True)
+        select(func.count(School.id)).where(School.is_active)
     )
     active_schools = active_schools_result.scalar_one()
 
     total_children_result = await db.execute(
-        select(func.count(Child.id)).where(Child.is_active == True)
+        select(func.count(Child.id)).where(Child.is_active)
     )
     total_children = total_children_result.scalar_one()
 
     total_users_result = await db.execute(
-        select(func.count(User.id)).where(User.is_active == True)
+        select(func.count(User.id)).where(User.is_active)
     )
     total_active_users = total_users_result.scalar_one()
 

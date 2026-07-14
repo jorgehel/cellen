@@ -65,7 +65,7 @@ async def unread_count(
         select(Notification).where(
             Notification.school_id == school_id,
             Notification.user_id == current_user.id,
-            Notification.is_read == False,
+            not Notification.is_read,
         )
     )
     notifications = result.scalars().all()
@@ -82,7 +82,7 @@ async def mark_all_notifications_read(
         select(Notification).where(
             Notification.school_id == school_id,
             Notification.user_id == current_user.id,
-            Notification.is_read == False,
+            not Notification.is_read,
         )
     )
     notifications = result.scalars().all()

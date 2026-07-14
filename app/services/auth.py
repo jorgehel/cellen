@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import hash_password, verify_password, create_access_token, create_refresh_token
+from app.core.security import verify_password, create_access_token, create_refresh_token
 from app.models.school import PlatformUser, School
 from app.models.user import User
 
@@ -13,7 +13,7 @@ async def authenticate_school_user(
     db: AsyncSession, username: str, password: str, school_id: uuid.UUID
 ) -> Optional[User]:
     result = await db.execute(
-        select(User).where(User.school_id == school_id, User.username == username, User.is_active == True)
+        select(User).where(User.school_id == school_id, User.username == username, User.is_active)
     )
     user = result.scalar_one_or_none()
     if user is None or not verify_password(password, user.password_hash):
@@ -25,7 +25,7 @@ async def authenticate_platform_user(
     db: AsyncSession, email: str, password: str
 ) -> Optional[PlatformUser]:
     result = await db.execute(
-        select(PlatformUser).where(PlatformUser.email == email, PlatformUser.is_active == True)
+        select(PlatformUser).where(PlatformUser.email == email, PlatformUser.is_active)
     )
     user = result.scalar_one_or_none()
     if user is None or not verify_password(password, user.password_hash):
@@ -35,7 +35,7 @@ async def authenticate_platform_user(
 
 async def get_school_by_slug(db: AsyncSession, slug: str) -> Optional[School]:
     result = await db.execute(
-        select(School).where(School.slug == slug, School.is_active == True)
+        select(School).where(School.slug == slug, School.is_active)
     )
     return result.scalar_one_or_none()
 

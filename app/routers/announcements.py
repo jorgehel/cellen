@@ -112,7 +112,7 @@ async def get_pinned_announcements(
     result = await db.execute(
         select(Announcement).where(
             Announcement.school_id == school_id,
-            Announcement.pinned == True,
+            Announcement.pinned,
         ).order_by(Announcement.created_at.desc())
     )
     announcements = result.scalars().all()

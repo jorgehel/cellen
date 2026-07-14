@@ -16,9 +16,9 @@ from app.schemas.finance import (
     ExpenseCategoryCreate, ExpenseCategoryResponse, ExpenseCategoryUpdate,
     ExpenseCreate, ExpenseResponse, ExpenseUpdate,
     InvoiceBulkCreate, InvoiceCreate, InvoiceResponse, InvoiceUpdate,
-    MulticaixaResponse, ParentInvoiceResponse,
+    ParentInvoiceResponse,
     PaymentCreate, PaymentResponse,
-    MonthlyPL, AnnualPL, OutstandingInvoice, CashFlowMonth, RevenuByLevel,
+    OutstandingInvoice, CashFlowMonth, RevenuByLevel,
 )
 from app.services.finance import (
     apply_payment_to_invoices,
@@ -30,6 +30,7 @@ from app.services.finance import (
     get_revenue_by_level,
     mark_overdue_invoices,
     reverse_payment,
+    _generate_and_set_multicaixa_ref,
 )
 from app.services.storage import save_upload
 
@@ -342,6 +343,7 @@ async def create_invoice(
         lines=lines_out if lines_out else None,
         **data,
     )
+    await _generate_and_set_multicaixa_ref(db, school_id, invoice)
     db.add(invoice)
     await db.commit()
     await db.refresh(invoice)
@@ -368,7 +370,7 @@ async def bulk_create_invoices(
 
     # Get all active children in this school
     children_result = await db.execute(
-        select(Child).where(Child.school_id == school_id, Child.is_active == True)
+        select(Child).where(Child.school_id == school_id, Child.is_active)
     )
     all_children = children_result.scalars().all()
 
@@ -382,7 +384,7 @@ async def bulk_create_invoices(
         grd_result = await db.execute(
             select(ChildGuardian.guardian_id).where(
                 ChildGuardian.child_id == child.id,
-                ChildGuardian.is_primary_contact == True,
+                ChildGuardian.is_primary_contact,
             )
         )
         primary_guardian_id = grd_result.scalar_one_or_none()
@@ -430,6 +432,7 @@ async def bulk_create_invoices(
             hash_code=ft_hash,
             previous_hash=prev_hash,
         )
+        await _generate_and_set_multicaixa_ref(db, school_id, invoice)
         db.add(invoice)
         invoices.append(invoice)
 
@@ -591,60 +594,7 @@ async def parent_submit_payment(
     return {"message": "Comprovativo submetido com sucesso", "payment_id": str(payment.id)}
 
 
-# ─── Multicaixa Reference Generation ─────────────────────────────────────────
 
-@router.post("/invoices/{invoice_id}/multicaixa", response_model=MulticaixaResponse)
-async def generate_multicaixa_reference(
-    invoice_id: uuid.UUID,
-    school_id: uuid.UUID = Depends(get_school_id),
-    db: AsyncSession = Depends(get_db),
-    _=Depends(require_school_admin),
-):
-    from app.models.school import School
-
-    result = await db.execute(
-        select(Invoice).where(Invoice.id == invoice_id, Invoice.school_id == school_id)
-    )
-    invoice = result.scalar_one_or_none()
-    if invoice is None:
-        raise HTTPException(status_code=404, detail="Invoice not found")
-
-    # Return existing reference if already generated
-    if invoice.multicaixa_ref and invoice.multicaixa_entity:
-        return MulticaixaResponse(
-            entidade=invoice.multicaixa_entity,
-            referencia=invoice.multicaixa_ref,
-            montante=str(invoice.total_amount),
-        )
-
-    # Determine entidade from school NIF (last 5 digits) or fallback
-    school_result = await db.execute(select(School).where(School.id == school_id))  # type: ignore[arg-type]
-    school = school_result.scalar_one_or_none()
-    nif = (school.nif or "") if school else ""
-    # Strip non-digits and take last 5, fallback to "11111"
-    nif_digits = "".join(c for c in nif if c.isdigit())
-    entidade = nif_digits[-5:] if len(nif_digits) >= 5 else "11111"
-
-    # Generate sequential reference: count of all invoices for this school up to and including this one
-    count_result = await db.execute(
-        select(func.count(Invoice.id)).where(
-            Invoice.school_id == school_id,
-            Invoice.created_at <= invoice.created_at,
-        )
-    )
-    seq_num = count_result.scalar() or 1
-    referencia = str(seq_num).zfill(9)
-
-    invoice.multicaixa_entity = entidade
-    invoice.multicaixa_ref = referencia
-    await db.commit()
-    await db.refresh(invoice)
-
-    return MulticaixaResponse(
-        entidade=entidade,
-        referencia=referencia,
-        montante=str(invoice.total_amount),
-    )
 
 
 # ─── Parent Invoice Portal ────────────────────────────────────────────────────
@@ -1025,7 +975,7 @@ async def bulk_generate_invoices(
 
     # Get all active children in this school
     children_result = await db.execute(
-        select(Child).where(Child.school_id == school_id, Child.is_active == True)
+        select(Child).where(Child.school_id == school_id, Child.is_active)
     )
     children = children_result.scalars().all()
 
@@ -1056,6 +1006,7 @@ async def bulk_generate_invoices(
             due_date=due_date_parsed,
             description=body.description,
         )
+        await _generate_and_set_multicaixa_ref(db, school_id, invoice)
         db.add(invoice)
         created_count += 1
 
@@ -1569,7 +1520,7 @@ async def list_billing_items(
     from app.models.billing_item import BillingItem
     query = select(BillingItem).where(BillingItem.school_id == school_id)
     if active_only:
-        query = query.where(BillingItem.is_active == True)
+        query = query.where(BillingItem.is_active)
     result = await db.execute(query.order_by(BillingItem.code))
     return result.scalars().all()
 
@@ -1582,7 +1533,6 @@ async def create_billing_item(
     _=Depends(require_school_admin),
 ):
     from app.models.billing_item import BillingItem
-    from sqlalchemy.exc import IntegrityError
     # Validate: 0% IVA requires an exemption reason
     if body.iva_rate == Decimal("0") and not body.iva_exemption_reason:
         raise HTTPException(
@@ -1935,8 +1885,8 @@ async def auto_generate_contract_invoices(
     contracts_result = await db.execute(
         select(Contract).where(
             Contract.school_id == school_id,
-            Contract.is_active == True,
-            Contract.auto_invoice == True,
+            Contract.is_active,
+            Contract.auto_invoice,
             Contract.start_date <= current_month,
         )
     )
@@ -2015,7 +1965,7 @@ async def delinquent_report(
             Invoice.school_id == school_id,
             Invoice.status.in_(["overdue", "pending"]),
             Invoice.due_date < today,
-            Invoice.is_void == False,
+            not Invoice.is_void,
         ).order_by(Invoice.due_date.asc())
     )
     invoices = overdue_result.scalars().all()
@@ -2032,7 +1982,7 @@ async def delinquent_report(
             link_result = await db.execute(
                 select(ChildGuardian).where(
                     ChildGuardian.child_id == child.id,
-                    ChildGuardian.is_primary_contact == True,
+                    ChildGuardian.is_primary_contact,
                 )
             )
             link = link_result.scalar_one_or_none()

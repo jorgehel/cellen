@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -146,10 +146,9 @@ async def get_today_attendance(
 
     # Get all active children
     children_result = await db.execute(
-        select(Child).where(Child.school_id == school_id, Child.is_active == True)
+        select(Child).where(Child.school_id == school_id, Child.is_active)
     )
     children = children_result.scalars().all()
-    child_map = {c.id: c for c in children}
     total_enrolled = len(children)
 
     # Get today's attendance records

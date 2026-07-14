@@ -1,4 +1,3 @@
-import os
 import uuid
 from pathlib import Path
 
@@ -33,7 +32,7 @@ async def save_upload(file: UploadFile, entity_type: str, entity_id: uuid.UUID) 
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=400,
-            detail=f"File too large. Maximum size is 5MB.",
+            detail="File too large. Maximum size is 5MB.",
         )
 
     # Build destination directory

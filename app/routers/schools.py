@@ -1,6 +1,5 @@
 import uuid
 from decimal import Decimal
-from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import func, select
@@ -110,7 +109,7 @@ async def get_school_stats(
     import calendar
 
     children_count_result = await db.execute(
-        select(func.count(Child.id)).where(Child.school_id == school_id, Child.is_active == True)
+        select(func.count(Child.id)).where(Child.school_id == school_id, Child.is_active)
     )
     children_count = children_count_result.scalar_one()
 

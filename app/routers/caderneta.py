@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_school_id, require_school_admin, require_teacher, require_parent, get_current_user
+from app.core.dependencies import get_school_id, require_school_admin, require_teacher, require_parent
 from app.models.caderneta import Caderneta
 from app.models.person import ChildGuardian
 from app.schemas.caderneta import CadernetaCreate, CadernetaResponse, CadernetaUpdate

@@ -3,12 +3,12 @@ from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, get_school_id, require_school_admin, require_teacher
+from app.core.dependencies import get_current_user, get_school_id, require_school_admin
 from app.models.food import Food, FoodMenu, FoodMenuItem
 from app.schemas.food import (
     FoodCreate, FoodMenuCreate, FoodMenuItemCreate, FoodMenuItemResponse,

@@ -532,7 +532,7 @@ async def create_enrollment(
         grd_result = await db.execute(
             select(ChildGuardian.guardian_id).where(
                 ChildGuardian.child_id == body.child_id,
-                ChildGuardian.is_primary_contact == True,
+                ChildGuardian.is_primary_contact,
             )
         )
         if grd_result.scalar_one_or_none() is None:
@@ -595,7 +595,7 @@ async def update_enrollment(
         grd_result = await db.execute(
             select(ChildGuardian.guardian_id).where(
                 ChildGuardian.child_id == enrollment.child_id,
-                ChildGuardian.is_primary_contact == True,
+                ChildGuardian.is_primary_contact,
             )
         )
         if grd_result.scalar_one_or_none() is None:

@@ -6,11 +6,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_school_id, require_school_admin, require_teacher, get_current_user, require_parent
+from app.core.dependencies import get_school_id, require_school_admin, require_teacher, get_current_user
 from app.models.academic import Enrollment, Schedule
 from app.models.caderneta import Caderneta
-from app.models.finance import Invoice, PaymentInvoice
-from app.models.immunization import Immunization
+from app.models.finance import Invoice
 from app.models.person import Child, ChildGuardian
 from app.schemas.caderneta import CadernetaResponse
 from app.schemas.child import ChildCreate, ChildResponse, ChildUpdate, ChildBalance
@@ -31,7 +30,7 @@ async def list_children(
     db: AsyncSession = Depends(get_db),
     _=Depends(require_teacher),
 ):
-    query = select(Child).where(Child.school_id == school_id, Child.is_active == True)
+    query = select(Child).where(Child.school_id == school_id, Child.is_active)
 
     if turma_id or enrollment_status:
         # Filter via enrollments
@@ -80,20 +79,20 @@ async def get_my_children(
             .where(
                 ChildGuardian.guardian_id == guardian_id,
                 Child.school_id == school_id,
-                Child.is_active == True,
+                Child.is_active,
             )
         )
         return result.scalars().all()
 
     elif role == "teacher":
         result = await db.execute(
-            select(Child).where(Child.school_id == school_id, Child.is_active == True)
+            select(Child).where(Child.school_id == school_id, Child.is_active)
         )
         return result.scalars().all()
 
     elif role in ("school_admin", "platform_admin"):
         result = await db.execute(
-            select(Child).where(Child.school_id == school_id, Child.is_active == True)
+            select(Child).where(Child.school_id == school_id, Child.is_active)
         )
         return result.scalars().all()
 
@@ -187,7 +186,6 @@ async def get_child_guardians(
     _=Depends(get_current_user),
 ):
     from app.models.person import Guardian
-    from app.schemas.guardian import GuardianResponse
 
     child_result = await db.execute(
         select(Child).where(Child.id == child_id, Child.school_id == school_id)

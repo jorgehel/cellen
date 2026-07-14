@@ -360,7 +360,7 @@ async def broadcast_message(
     recipients_result = await db.execute(
         select(User).where(
             User.school_id == school_id,
-            User.is_active == True,
+            User.is_active,
             User.role.in_(role_filters),
         )
     )

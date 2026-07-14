@@ -202,7 +202,7 @@ async def list_meal_orders(
     from app.models.person import Child, ChildGuardian
 
     role = getattr(current_user, "_role", "parent")
-    query = select(MealOrder).where(MealOrder.school_id == school_id, MealOrder.ordered == True)
+    query = select(MealOrder).where(MealOrder.school_id == school_id, MealOrder.ordered)
 
     if role not in ("school_admin", "platform_admin", "teacher", "staff"):
         guardian_id = getattr(current_user, "guardian_id", None)
@@ -302,7 +302,7 @@ async def get_daily_meal_counts(
         )
         .where(
             MealOrder.school_id == school_id,
-            MealOrder.ordered == True,
+            MealOrder.ordered,
             MealOrder.order_date >= q_from,
             MealOrder.order_date <= q_to,
         )

@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime, time
 from decimal import Decimal
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 from sqlalchemy import (
     Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String,
