@@ -357,7 +357,7 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
         return (users: users, error: null);
       } catch (e2) {
         return (
-          users: [],
+          users: <Map<String, dynamic>>[],
           error: 'Falha ao carregar a lista de destinatários.\n'
               'Por favor, tente novamente mais tarde.'
         );
