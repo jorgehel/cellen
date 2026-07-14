@@ -8,6 +8,27 @@ import '../../core/auth/auth_provider.dart';
 // ---------------------------------------------------------------------------
 // Model
 // ---------------------------------------------------------------------------
+class TripResponse {
+  final String childId;
+  final String? childName;
+  final bool authorized;
+  final String? notes;
+
+  const TripResponse({
+    required this.childId,
+    this.childName,
+    required this.authorized,
+    this.notes,
+  });
+
+  factory TripResponse.fromJson(Map<String, dynamic> json) => TripResponse(
+        childId: json['child_id']?.toString() ?? '',
+        childName: json['child_name'] as String?,
+        authorized: json['authorized'] as bool? ?? false,
+        notes: json['notes'] as String?,
+      );
+}
+
 class TripAuth {
   final String id;
   final String title;
@@ -17,8 +38,7 @@ class TripAuth {
   final String? departureTime;
   final String? returnTime;
   final DateTime? deadlineDate;
-  final int respondedCount;
-  final bool? childResponse; // null = not responded (parent view)
+  final List<TripResponse> responses;
 
   const TripAuth({
     required this.id,
@@ -29,26 +49,40 @@ class TripAuth {
     this.departureTime,
     this.returnTime,
     this.deadlineDate,
-    required this.respondedCount,
-    this.childResponse,
+    required this.responses,
   });
 
-  factory TripAuth.fromJson(Map<String, dynamic> json) => TripAuth(
-        id: json['id']?.toString() ?? '',
-        title: json['title'] as String? ?? '',
-        description: json['description'] as String?,
-        tripDate: json['trip_date'] != null
-            ? DateTime.tryParse(json['trip_date'] as String) ?? DateTime.now()
-            : DateTime.now(),
-        destination: json['destination'] as String?,
-        departureTime: json['departure_time'] as String?,
-        returnTime: json['return_time'] as String?,
-        deadlineDate: json['deadline_date'] != null
-            ? DateTime.tryParse(json['deadline_date'] as String)
-            : null,
-        respondedCount: json['responded_count'] as int? ?? 0,
-        childResponse: json['child_response'] as bool?,
-      );
+  int get respondedCount => responses.length;
+
+  /// For parent view: check if a specific child has responded
+  TripResponse? responseForChild(String childId) {
+    for (final r in responses) {
+      if (r.childId == childId) return r;
+    }
+    return null;
+  }
+
+  factory TripAuth.fromJson(Map<String, dynamic> json) {
+    final responsesList = (json['responses'] as List?)
+            ?.map((e) => TripResponse.fromJson(e as Map<String, dynamic>))
+            .toList() ??
+        [];
+    return TripAuth(
+      id: json['id']?.toString() ?? '',
+      title: json['title'] as String? ?? '',
+      description: json['description'] as String?,
+      tripDate: json['trip_date'] != null
+          ? DateTime.tryParse(json['trip_date'] as String) ?? DateTime.now()
+          : DateTime.now(),
+      destination: json['destination'] as String?,
+      departureTime: json['departure_time'] as String?,
+      returnTime: json['return_time'] as String?,
+      deadlineDate: json['deadline_date'] != null
+          ? DateTime.tryParse(json['deadline_date'] as String)
+          : null,
+      responses: responsesList,
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -293,7 +327,7 @@ class _AdminTripCard extends ConsumerWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Parent card with respond buttons
+// Parent card with per-child respond buttons
 // ---------------------------------------------------------------------------
 class _ParentTripCard extends ConsumerStatefulWidget {
   final TripAuth trip;
@@ -307,25 +341,32 @@ class _ParentTripCard extends ConsumerStatefulWidget {
 
 class _ParentTripCardState extends ConsumerState<_ParentTripCard> {
   bool _isResponding = false;
+  List<Map<String, dynamic>>? _myChildren;
 
-  Future<void> _respond(bool authorized) async {
+  @override
+  void initState() {
+    super.initState();
+    _loadChildren();
+  }
+
+  Future<void> _loadChildren() async {
+    try {
+      final api = ref.read(apiClientProvider);
+      final data = await api.get('/children/my') as List;
+      if (mounted) {
+        setState(() {
+          _myChildren = data.cast<Map<String, dynamic>>();
+        });
+      }
+    } catch (_) {
+      // Silently fail — buttons just won't show
+    }
+  }
+
+  Future<void> _respond(String childId, bool authorized) async {
     setState(() => _isResponding = true);
     try {
       final api = ref.read(apiClientProvider);
-      // We need child_id — fetch current user's first child
-      final childrenData =
-          await api.get('/children/my') as List;
-      if (childrenData.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content:
-                    Text('Nenhuma criança associada à sua conta')),
-          );
-        }
-        return;
-      }
-      final childId = childrenData.first['id']?.toString();
       await api.post('/trip-authorizations/${widget.trip.id}/respond',
           data: {
             'child_id': childId,
@@ -346,76 +387,30 @@ class _ParentTripCardState extends ConsumerState<_ParentTripCard> {
   @override
   Widget build(BuildContext context) {
     final dateStr = DateFormat('dd/MM/yyyy').format(widget.trip.tripDate);
-    final hasResponded = widget.trip.childResponse != null;
     final isDeadlinePast = widget.trip.deadlineDate != null &&
         widget.trip.deadlineDate!.isBefore(DateTime.now());
 
+    // Determine per-child response state
+    final children = _myChildren ?? [];
+    final allResponded = children.isNotEmpty &&
+        children.every((c) =>
+            widget.trip.responseForChild(c['id']?.toString() ?? '') != null);
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      elevation: hasResponded ? 1 : 3,
+      elevation: allResponded ? 1 : 3,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: hasResponded
-            ? BorderSide(
-                color: widget.trip.childResponse!
-                    ? Colors.green.shade300
-                    : Colors.red.shade300,
-                width: 1.5)
-            : BorderSide.none,
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    widget.trip.title,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 15),
-                  ),
-                ),
-                if (hasResponded)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: widget.trip.childResponse!
-                          ? Colors.green.shade100
-                          : Colors.red.shade100,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          widget.trip.childResponse!
-                              ? Icons.check_circle
-                              : Icons.cancel,
-                          size: 14,
-                          color: widget.trip.childResponse!
-                              ? Colors.green.shade700
-                              : Colors.red.shade700,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          widget.trip.childResponse!
-                              ? 'Autorizado'
-                              : 'Não Autorizado',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: widget.trip.childResponse!
-                                ? Colors.green.shade700
-                                : Colors.red.shade700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
+            Text(
+              widget.trip.title,
+              style:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
             ),
             const SizedBox(height: 8),
             _InfoRow(icon: Icons.calendar_today, text: dateStr),
@@ -443,46 +438,118 @@ class _ParentTripCardState extends ConsumerState<_ParentTripCard> {
                       color:
                           Theme.of(context).colorScheme.onSurfaceVariant)),
             ],
-            if (!hasResponded && !isDeadlinePast) ...[
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed:
-                          _isResponding ? null : () => _respond(false),
-                      icon: const Icon(Icons.close, color: Colors.red),
-                      label: const Text('Não Autorizar',
-                          style: TextStyle(color: Colors.red)),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.red),
-                      ),
-                    ),
+            // Per-child response section
+            if (children.isNotEmpty) ...[
+              const Divider(height: 20),
+              ...children.map((child) {
+                final childId = child['id']?.toString() ?? '';
+                final childName =
+                    '${child['first_name'] ?? ''} ${child['last_name'] ?? ''}'.trim();
+                final resp = widget.trip.responseForChild(childId);
+                final hasResponded = resp != null;
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (children.length > 1)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(childName,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w600, fontSize: 13)),
+                        ),
+                      if (hasResponded)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: resp.authorized
+                                ? Colors.green.shade50
+                                : Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                resp.authorized
+                                    ? Icons.check_circle
+                                    : Icons.cancel,
+                                size: 16,
+                                color: resp.authorized
+                                    ? Colors.green.shade700
+                                    : Colors.red.shade700,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                resp.authorized
+                                    ? 'Autorizado'
+                                    : 'Não Autorizado',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: resp.authorized
+                                      ? Colors.green.shade700
+                                      : Colors.red.shade700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else if (!isDeadlinePast)
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: _isResponding
+                                    ? null
+                                    : () => _respond(childId, false),
+                                icon: const Icon(Icons.close,
+                                    color: Colors.red, size: 16),
+                                label: const Text('Não',
+                                    style: TextStyle(
+                                        color: Colors.red, fontSize: 12)),
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(color: Colors.red),
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 6),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: FilledButton.icon(
+                                onPressed: _isResponding
+                                    ? null
+                                    : () => _respond(childId, true),
+                                icon:
+                                    const Icon(Icons.check, size: 16),
+                                label: const Text('Autorizar',
+                                    style: TextStyle(fontSize: 12)),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: Colors.green,
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 6),
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
+                      else
+                        Text(
+                          'Prazo ultrapassado',
+                          style: TextStyle(
+                              color: Colors.red.shade600,
+                              fontSize: 12,
+                              fontStyle: FontStyle.italic),
+                        ),
+                    ],
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed:
-                          _isResponding ? null : () => _respond(true),
-                      icon: const Icon(Icons.check),
-                      label: const Text('Autorizar'),
-                      style: FilledButton.styleFrom(
-                          backgroundColor: Colors.green),
-                    ),
-                  ),
-                ],
-              ),
-            ] else if (isDeadlinePast && !hasResponded)
-              Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: Text(
-                  'Prazo de resposta ultrapassado',
-                  style: TextStyle(
-                      color: Colors.red.shade600,
-                      fontSize: 12,
-                      fontStyle: FontStyle.italic),
-                ),
-              ),
+                );
+              }),
+            ],
           ],
         ),
       ),

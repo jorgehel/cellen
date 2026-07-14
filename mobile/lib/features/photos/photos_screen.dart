@@ -1,6 +1,8 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/api/api_client.dart';
@@ -31,8 +33,15 @@ class PhotoItem {
           json['image']?.toString() ??
           '',
       caption: json['caption']?.toString(),
-      dateStr: json['date']?.toString() ?? json['created_at']?.toString(),
+      dateStr: json['photo_date']?.toString() ??
+          json['date']?.toString() ??
+          json['created_at']?.toString(),
     );
+  }
+
+  String get fullUrl {
+    if (url.startsWith('http')) return url;
+    return '$kMediaBase$url';
   }
 }
 
@@ -78,7 +87,7 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
       ),
       floatingActionButton: canUpload
           ? FloatingActionButton.extended(
-              onPressed: _showAddPhotoDialog,
+              onPressed: _pickAndUploadPhoto,
               icon: const Icon(Icons.add_a_photo),
               label: const Text('Adicionar Foto'),
             )
@@ -101,6 +110,11 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                   Text(
                     'Sem fotos na galeria',
                     style: TextStyle(color: Colors.grey, fontSize: 16),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Toque no botão + para adicionar fotos',
+                    style: TextStyle(color: Colors.grey, fontSize: 13),
                   ),
                 ],
               ),
@@ -142,13 +156,22 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
     );
   }
 
-  void _showAddPhotoDialog() {
-    final urlCtrl = TextEditingController();
-    final captionCtrl = TextEditingController();
-    String? selectedDate;
-    bool isLoading = false;
+  Future<void> _pickAndUploadPhoto() async {
+    final picker = ImagePicker();
+    final xFile = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1920,
+      maxHeight: 1920,
+      imageQuality: 85,
+    );
+    if (xFile == null) return;
 
-    showDialog(
+    // Show caption dialog
+    if (!mounted) return;
+    final captionCtrl = TextEditingController();
+    DateTime? selectedDate;
+
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
@@ -157,19 +180,28 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextField(
-                  controller: urlCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'URL da Foto',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.link),
+                // Preview
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    xFile.path,
+                    height: 150,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      height: 150,
+                      color: Colors.grey.shade200,
+                      child: const Center(
+                        child: Icon(Icons.image, size: 48, color: Colors.grey),
+                      ),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
                 TextField(
                   controller: captionCtrl,
                   decoration: const InputDecoration(
-                    labelText: 'Legenda',
+                    labelText: 'Legenda (opcional)',
                     border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.text_fields),
                   ),
@@ -178,7 +210,9 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                 OutlinedButton.icon(
                   icon: const Icon(Icons.calendar_today),
                   label: Text(
-                    selectedDate ?? 'Seleccionar data',
+                    selectedDate != null
+                        ? DateFormat('dd/MM/yyyy').format(selectedDate!)
+                        : 'Data (hoje por omissão)',
                   ),
                   onPressed: () async {
                     final picked = await showDatePicker(
@@ -188,10 +222,7 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                       lastDate: DateTime.now(),
                     );
                     if (picked != null) {
-                      setDialogState(() {
-                        selectedDate =
-                            DateFormat('yyyy-MM-dd').format(picked);
-                      });
+                      setDialogState(() => selectedDate = picked);
                     }
                   },
                 ),
@@ -200,50 +231,81 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(ctx),
+              onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancelar'),
             ),
-            ElevatedButton(
-              onPressed: isLoading
-                  ? null
-                  : () async {
-                      if (urlCtrl.text.trim().isEmpty) return;
-                      setDialogState(() => isLoading = true);
-                      try {
-                        await ref.read(apiClientProvider).post(
-                          '/photos',
-                          data: {
-                            'url': urlCtrl.text.trim(),
-                            'caption': captionCtrl.text.trim(),
-                            'date': selectedDate ??
-                                DateFormat('yyyy-MM-dd')
-                                    .format(DateTime.now()),
-                          },
-                        );
-                        if (ctx.mounted) Navigator.pop(ctx);
-                        ref.invalidate(photosProvider);
-                      } catch (e) {
-                        if (ctx.mounted) {
-                          ScaffoldMessenger.of(ctx).showSnackBar(
-                            SnackBar(content: Text('Erro: $e')),
-                          );
-                        }
-                      } finally {
-                        setDialogState(() => isLoading = false);
-                      }
-                    },
-              child: isLoading
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Guardar'),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Carregar'),
             ),
           ],
         ),
       ),
     );
+
+    if (confirmed != true || !mounted) return;
+
+    // Upload with progress indicator
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 18, height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            ),
+            SizedBox(width: 12),
+            Text('A carregar foto...'),
+          ],
+        ),
+        duration: Duration(seconds: 30),
+      ),
+    );
+
+    try {
+      final api = ref.read(apiClientProvider);
+      final bytes = await xFile.readAsBytes();
+      final mimeType = xFile.mimeType ?? _mimeFromName(xFile.name);
+
+      final formData = {
+        'file': MultipartFile.fromBytes(
+          bytes,
+          filename: xFile.name,
+          contentType: DioMediaType.parse(mimeType),
+        ),
+        if (captionCtrl.text.trim().isNotEmpty)
+          'caption': captionCtrl.text.trim(),
+        if (selectedDate != null)
+          'photo_date': DateFormat('yyyy-MM-dd').format(selectedDate!),
+      };
+
+      await api.postForm('/photos', data: formData);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Foto adicionada com sucesso')),
+        );
+      }
+      ref.invalidate(photosProvider);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao carregar foto: $e')),
+        );
+      }
+    }
+  }
+
+  static String _mimeFromName(String filename) {
+    final ext = filename.split('.').last.toLowerCase();
+    return switch (ext) {
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'webp' => 'image/webp',
+      _ => 'image/jpeg',
+    };
   }
 }
 
@@ -275,7 +337,7 @@ class _PhotoCard extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             CachedNetworkImage(
-              imageUrl: photo.url,
+              imageUrl: photo.fullUrl,
               fit: BoxFit.cover,
               placeholder: (_, __) => Container(
                 color: Colors.grey.shade200,
@@ -409,7 +471,7 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
                 return InteractiveViewer(
                   child: Center(
                     child: CachedNetworkImage(
-                      imageUrl: widget.photos[i].url,
+                      imageUrl: widget.photos[i].fullUrl,
                       fit: BoxFit.contain,
                       placeholder: (_, __) => const Center(
                           child: CircularProgressIndicator()),

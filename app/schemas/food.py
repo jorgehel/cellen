@@ -7,8 +7,8 @@ from pydantic import BaseModel, ConfigDict
 
 class FoodBase(BaseModel):
     name: str
-    description: Optional[str] = None
-    food_type: Optional[str] = None  # breakfast, lunch, snack, etc.
+    details: Optional[str] = None
+    type: Optional[str] = None  # breakfast, lunch, snack, etc.
 
 
 class FoodCreate(FoodBase):
@@ -17,8 +17,8 @@ class FoodCreate(FoodBase):
 
 class FoodUpdate(BaseModel):
     name: Optional[str] = None
-    description: Optional[str] = None
-    food_type: Optional[str] = None
+    details: Optional[str] = None
+    type: Optional[str] = None
 
 
 class FoodResponse(FoodBase):

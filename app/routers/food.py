@@ -31,7 +31,7 @@ async def list_foods(
 ):
     query = select(Food).where(Food.school_id == school_id)
     if food_type:
-        query = query.where(Food.food_type == food_type)
+        query = query.where(Food.type == food_type)
     result = await db.execute(query.offset(skip).limit(limit))
     return result.scalars().all()
 

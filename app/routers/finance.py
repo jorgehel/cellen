@@ -510,11 +510,85 @@ async def cancel_invoice(
 async def upload_payment_proof(
     file: UploadFile = File(...),
     school_id: uuid.UUID = Depends(get_school_id),
-    _=Depends(require_school_admin),
+    _=Depends(get_current_user),
 ):
     import uuid as _uuid
     url = await save_upload(file, "payment-proofs", _uuid.uuid4())
     return {"url": url}
+
+
+# ─── Parent Payment Submission ────────────────────────────────────────────────
+
+
+class ParentPaymentSubmit(BaseModel):
+    invoice_id: uuid.UUID
+    amount: Decimal
+    payment_method: Optional[str] = None
+    receipt_proof_url: str
+    notes: Optional[str] = None
+
+
+@router.post("/parent/submit-payment", status_code=status.HTTP_201_CREATED)
+async def parent_submit_payment(
+    body: ParentPaymentSubmit,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_parent),
+):
+    """Parent submits proof of payment for an invoice. Creates a payment
+    record that the admin can review."""
+    from app.models.person import ChildGuardian
+
+    # Verify invoice exists and belongs to this school
+    invoice_result = await db.execute(
+        select(Invoice).where(Invoice.id == body.invoice_id, Invoice.school_id == school_id)
+    )
+    invoice = invoice_result.scalar_one_or_none()
+    if invoice is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    # Verify parent is linked to the invoice's child
+    guardian_id = getattr(current_user, "guardian_id", None)
+    if guardian_id:
+        link = await db.execute(
+            select(ChildGuardian).where(
+                ChildGuardian.guardian_id == guardian_id,
+                ChildGuardian.child_id == invoice.child_id,
+            )
+        )
+        if link.scalar_one_or_none() is None:
+            raise HTTPException(status_code=403, detail="Not authorized for this child's invoices")
+
+    if not body.receipt_proof_url:
+        raise HTTPException(status_code=400, detail="Comprovativo de pagamento obrigatório")
+
+    # Create a pending payment (admin will verify)
+    payment = Payment(
+        school_id=school_id,
+        child_id=invoice.child_id,
+        received_by=guardian_id or current_user.id,
+        payment_date=date.today(),
+        amount=body.amount,
+        payment_method=body.payment_method or "multicaixa",
+        receipt_proof_url=body.receipt_proof_url,
+        notes=body.notes or "Submetido pelo encarregado",
+        status="pending_review",
+    )
+    db.add(payment)
+    await db.flush()
+
+    # Link payment to invoice
+    pi = PaymentInvoice(
+        school_id=school_id,
+        payment_id=payment.id,
+        invoice_id=body.invoice_id,
+        amount_applied=body.amount,
+    )
+    db.add(pi)
+
+    await db.commit()
+    await db.refresh(payment)
+    return {"message": "Comprovativo submetido com sucesso", "payment_id": str(payment.id)}
 
 
 # ─── Multicaixa Reference Generation ─────────────────────────────────────────

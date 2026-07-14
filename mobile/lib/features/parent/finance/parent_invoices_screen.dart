@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/api/api_client.dart';
@@ -211,6 +212,8 @@ class _ParentInvoicesScreenState extends ConsumerState<ParentInvoicesScreen> {
                       return _InvoiceCard(
                         invoice: filtered[i],
                         currency: currency,
+                        onPaymentSubmitted: () =>
+                            ref.invalidate(parentInvoicesProvider),
                       );
                     },
                   ),
@@ -239,20 +242,23 @@ class _ParentInvoicesScreenState extends ConsumerState<ParentInvoicesScreen> {
 // Invoice Card
 // ---------------------------------------------------------------------------
 
-class _InvoiceCard extends StatelessWidget {
+class _InvoiceCard extends ConsumerWidget {
   final ParentInvoice invoice;
   final NumberFormat currency;
+  final VoidCallback onPaymentSubmitted;
 
   const _InvoiceCard({
     required this.invoice,
     required this.currency,
+    required this.onPaymentSubmitted,
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final monthLabel =
         DateFormat('MMMM yyyy', 'pt_PT').format(invoice.referenceMonth);
+    final canPay = invoice.status != 'paid' && invoice.status != 'cancelled';
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -306,6 +312,23 @@ class _InvoiceCard extends StatelessWidget {
               ],
             ),
 
+            if (invoice.amountPaid > 0 && invoice.status != 'paid') ...[
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Em falta',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.orange)),
+                  Text(
+                    currency.format(invoice.balance),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600, color: Colors.orange),
+                  ),
+                ],
+              ),
+            ],
+
             if (invoice.dueDate != null) ...[
               const SizedBox(height: 4),
               Row(
@@ -348,7 +371,9 @@ class _InvoiceCard extends StatelessWidget {
               _MulticaixaReceiptBox(
                 entidade: invoice.multicaixaEntity!,
                 referencia: invoice.multicaixaRef!,
-                montante: currency.format(invoice.totalAmount),
+                montante: currency.format(invoice.balance > 0
+                    ? invoice.balance
+                    : invoice.totalAmount),
               ),
             ] else ...[
               Row(
@@ -367,9 +392,293 @@ class _InvoiceCard extends StatelessWidget {
                 ],
               ),
             ],
+
+            // Submit payment button
+            if (canPay) ...[
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () => _showPaymentDialog(context, ref),
+                  icon: const Icon(Icons.camera_alt_outlined),
+                  label: const Text('Enviar Comprovativo de Pagamento'),
+                ),
+              ),
+            ],
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _showPaymentDialog(BuildContext context, WidgetRef ref) async {
+    await showDialog(
+      context: context,
+      builder: (_) => _SubmitPaymentDialog(
+        invoice: invoice,
+        currency: currency,
+        onSubmitted: onPaymentSubmitted,
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Submit Payment Dialog
+// ---------------------------------------------------------------------------
+class _SubmitPaymentDialog extends ConsumerStatefulWidget {
+  final ParentInvoice invoice;
+  final NumberFormat currency;
+  final VoidCallback onSubmitted;
+
+  const _SubmitPaymentDialog({
+    required this.invoice,
+    required this.currency,
+    required this.onSubmitted,
+  });
+
+  @override
+  ConsumerState<_SubmitPaymentDialog> createState() =>
+      _SubmitPaymentDialogState();
+}
+
+class _SubmitPaymentDialogState extends ConsumerState<_SubmitPaymentDialog> {
+  final _amountCtrl = TextEditingController();
+  final _notesCtrl = TextEditingController();
+  XFile? _proofFile;
+  String _paymentMethod = 'multicaixa';
+  bool _isLoading = false;
+  String? _error;
+
+  static const _paymentMethods = {
+    'multicaixa': 'Multicaixa / ATM',
+    'transferencia': 'Transferência Bancária',
+    'numerario': 'Numerário',
+    'outro': 'Outro',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    final balance = widget.invoice.balance > 0
+        ? widget.invoice.balance
+        : widget.invoice.totalAmount;
+    _amountCtrl.text = balance.toStringAsFixed(2);
+  }
+
+  @override
+  void dispose() {
+    _amountCtrl.dispose();
+    _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickProof() async {
+    final file = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1920,
+      maxHeight: 1920,
+      imageQuality: 85,
+    );
+    if (file != null) setState(() => _proofFile = file);
+  }
+
+  Future<void> _submit() async {
+    final amount = double.tryParse(_amountCtrl.text.replaceAll(',', '.'));
+    if (amount == null || amount <= 0) {
+      setState(() => _error = 'Valor inválido');
+      return;
+    }
+    if (_proofFile == null) {
+      setState(() => _error = 'Comprovativo de pagamento obrigatório');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final api = ref.read(apiClientProvider);
+
+      // 1. Upload proof image
+      final uploadResult = await api.uploadFile(
+        '/finance/payment-proof',
+        _proofFile!,
+      );
+      final proofUrl = uploadResult['url'] as String;
+
+      // 2. Submit payment proof for admin review
+      await api.post('/finance/parent/submit-payment', data: {
+        'invoice_id': widget.invoice.id,
+        'amount': amount,
+        'payment_method': _paymentMethod,
+        'receipt_proof_url': proofUrl,
+        if (_notesCtrl.text.trim().isNotEmpty)
+          'notes': _notesCtrl.text.trim(),
+      });
+
+      widget.onSubmitted();
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Comprovativo enviado com sucesso!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return AlertDialog(
+      title: const Text('Enviar Comprovativo'),
+      content: SizedBox(
+        width: 420,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Invoice info
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(widget.invoice.childName,
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    Text(
+                      DateFormat('MMMM yyyy', 'pt_PT')
+                          .format(widget.invoice.referenceMonth),
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Amount
+              TextFormField(
+                controller: _amountCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Valor pago (Kz)',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.monetization_on_outlined),
+                ),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+              ),
+              const SizedBox(height: 12),
+
+              // Payment method
+              DropdownButtonFormField<String>(
+                value: _paymentMethod,
+                decoration: const InputDecoration(
+                  labelText: 'Método de pagamento',
+                  border: OutlineInputBorder(),
+                ),
+                items: _paymentMethods.entries
+                    .map((e) =>
+                        DropdownMenuItem(value: e.key, child: Text(e.value)))
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) setState(() => _paymentMethod = v);
+                },
+              ),
+              const SizedBox(height: 12),
+
+              // Proof of payment picker
+              OutlinedButton.icon(
+                onPressed: _pickProof,
+                icon: Icon(
+                  _proofFile == null
+                      ? Icons.camera_alt_outlined
+                      : Icons.check_circle,
+                  color: _proofFile == null ? null : Colors.green,
+                ),
+                label: Text(
+                  _proofFile == null
+                      ? 'Fotografar / Anexar comprovativo *'
+                      : _proofFile!.name,
+                  style: TextStyle(
+                    color: _proofFile == null ? null : Colors.green,
+                    fontWeight:
+                        _proofFile != null ? FontWeight.w600 : null,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                  alignment: Alignment.centerLeft,
+                  side: BorderSide(
+                    color: _proofFile == null
+                        ? theme.colorScheme.outline
+                        : Colors.green,
+                    width: _proofFile == null ? 1 : 1.5,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Notes
+              TextFormField(
+                controller: _notesCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Observações (opcional)',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 2,
+              ),
+
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(_error!,
+                      style: TextStyle(color: Colors.red.shade800)),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: _isLoading ? null : _submit,
+          child: _isLoading
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white))
+              : const Text('Enviar'),
+        ),
+      ],
     );
   }
 }

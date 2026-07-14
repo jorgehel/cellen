@@ -1,6 +1,9 @@
+import 'package:dio/dio.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/auth/auth_provider.dart';
@@ -35,10 +38,15 @@ class LibraryDocument {
     required this.createdAt,
   });
 
+  String get fullUrl {
+    if (fileUrl.startsWith('http')) return fileUrl;
+    return '$kMediaBase$fileUrl';
+  }
+
   factory LibraryDocument.fromJson(Map<String, dynamic> json) {
     return LibraryDocument(
       id: json['id']?.toString() ?? '',
-      title: json['title'] as String? ?? '',
+      title: json['name'] as String? ?? json['title'] as String? ?? '',
       description: json['description'] as String?,
       fileUrl: json['file_url'] as String? ?? '',
       fileName: json['file_name'] as String? ?? '',
@@ -311,10 +319,17 @@ class _DocumentCard extends StatelessWidget {
             Column(
               children: [
                 OutlinedButton(
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('URL: ${doc.fileUrl}')),
-                    );
+                  onPressed: () async {
+                    final url = Uri.parse(doc.fullUrl);
+                    if (await canLaunchUrl(url)) {
+                      await launchUrl(url, mode: LaunchMode.externalApplication);
+                    } else {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Não foi possível abrir o documento')),
+                        );
+                      }
+                    }
                   },
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
@@ -380,10 +395,10 @@ class _AddDocumentDialog extends ConsumerStatefulWidget {
 
 class _AddDocumentDialogState extends ConsumerState<_AddDocumentDialog> {
   final _formKey = GlobalKey<FormState>();
-  final _titleCtrl = TextEditingController();
+  final _nameCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
-  final _fileUrlCtrl = TextEditingController();
   String? _category;
+  PlatformFile? _pickedFile;
   bool _isLoading = false;
   String? _error;
 
@@ -397,26 +412,60 @@ class _AddDocumentDialogState extends ConsumerState<_AddDocumentDialog> {
 
   @override
   void dispose() {
-    _titleCtrl.dispose();
+    _nameCtrl.dispose();
     _descCtrl.dispose();
-    _fileUrlCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'],
+      withData: true,
+    );
+    if (result != null && result.files.isNotEmpty) {
+      setState(() => _pickedFile = result.files.first);
+      // Auto-fill name from filename if empty
+      if (_nameCtrl.text.trim().isEmpty) {
+        _nameCtrl.text = _pickedFile!.name.split('.').first;
+      }
+    }
+  }
+
+  String _mimeFromName(String filename) {
+    final ext = filename.split('.').last.toLowerCase();
+    return switch (ext) {
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'pdf' => 'application/pdf',
+      'doc' => 'application/msword',
+      'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      _ => 'application/octet-stream',
+    };
   }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_pickedFile == null || _pickedFile!.bytes == null) {
+      setState(() => _error = 'Seleccione um ficheiro');
+      return;
+    }
     setState(() {
       _isLoading = true;
       _error = null;
     });
     try {
       final api = ref.read(apiClientProvider);
-      await api.post('/documents', data: {
-        'title': _titleCtrl.text.trim(),
+      final mimeType = _mimeFromName(_pickedFile!.name);
+      await api.postForm('/documents', data: {
+        'file': MultipartFile.fromBytes(
+          _pickedFile!.bytes!,
+          filename: _pickedFile!.name,
+          contentType: DioMediaType.parse(mimeType),
+        ),
+        'name': _nameCtrl.text.trim(),
         if (_descCtrl.text.trim().isNotEmpty)
           'description': _descCtrl.text.trim(),
-        'file_url': _fileUrlCtrl.text.trim(),
-        'file_name': _fileUrlCtrl.text.trim().split('/').last,
         if (_category != null) 'category': _category,
         'target': 'all',
       });
@@ -443,9 +492,34 @@ class _AddDocumentDialogState extends ConsumerState<_AddDocumentDialog> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // File picker
+                OutlinedButton.icon(
+                  onPressed: _pickFile,
+                  icon: const Icon(Icons.attach_file),
+                  label: Text(
+                    _pickedFile != null
+                        ? _pickedFile!.name
+                        : 'Seleccionar ficheiro *',
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                    alignment: Alignment.centerLeft,
+                  ),
+                ),
+                if (_pickedFile != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '${(_pickedFile!.size / 1024).toStringAsFixed(0)} KB',
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
+                const SizedBox(height: 12),
                 TextFormField(
-                  controller: _titleCtrl,
-                  decoration: const InputDecoration(labelText: 'Título *'),
+                  controller: _nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Nome do documento *',
+                    border: OutlineInputBorder(),
+                  ),
                   validator: (v) =>
                       v == null || v.trim().isEmpty ? 'Obrigatório' : null,
                 ),
@@ -453,20 +527,18 @@ class _AddDocumentDialogState extends ConsumerState<_AddDocumentDialog> {
                 TextFormField(
                   controller: _descCtrl,
                   decoration: const InputDecoration(
-                      labelText: 'Descrição (opcional)'),
+                    labelText: 'Descrição (opcional)',
+                    border: OutlineInputBorder(),
+                  ),
                   maxLines: 2,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _fileUrlCtrl,
-                  decoration: const InputDecoration(labelText: 'URL do Ficheiro *'),
-                  validator: (v) =>
-                      v == null || v.trim().isEmpty ? 'Obrigatório' : null,
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
                   value: _category,
-                  decoration: const InputDecoration(labelText: 'Categoria'),
+                  decoration: const InputDecoration(
+                    labelText: 'Categoria',
+                    border: OutlineInputBorder(),
+                  ),
                   items: _categories
                       .map((c) =>
                           DropdownMenuItem(value: c, child: Text(c)))
@@ -475,8 +547,15 @@ class _AddDocumentDialogState extends ConsumerState<_AddDocumentDialog> {
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 8),
-                  Text(_error!,
-                      style: const TextStyle(color: AppTheme.danger)),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(_error!,
+                        style: TextStyle(color: Colors.red.shade800)),
+                  ),
                 ],
               ],
             ),

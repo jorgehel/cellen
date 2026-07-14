@@ -253,17 +253,22 @@ const _staffItems = [
   SidebarItem(path: '/notifications',                label: 'Notificações',  icon: Icons.notifications_outlined,               selectedIcon: Icons.notifications),
 ];
 
-// Parent — 10 sections per spec section 21
+// Parent — comprehensive navigation
 const _parentItems = [
   SidebarItem(path: '/parent',                       label: 'Início',        icon: Icons.home_outlined,                        selectedIcon: Icons.home),
   SidebarItem(path: '/parent/caderneta',             label: 'Caderneta',     icon: Icons.menu_book_outlined,                   selectedIcon: Icons.menu_book),
   SidebarItem(path: '/parent/invoices',              label: 'Finanças',      icon: Icons.receipt_long_outlined,                selectedIcon: Icons.receipt_long),
   SidebarItem(path: '/health',                       label: 'Saúde',         icon: Icons.health_and_safety_outlined,           selectedIcon: Icons.health_and_safety),
-  SidebarItem(path: '/documents',                    label: 'Documentos',    icon: Icons.folder_outlined,                      selectedIcon: Icons.folder),
+  SidebarItem(path: '/evaluations',                  label: 'Avaliações',    icon: Icons.school_outlined,                      selectedIcon: Icons.school),
   SidebarItem(path: '/announcements',                label: 'Avisos',        icon: Icons.campaign_outlined,                    selectedIcon: Icons.campaign),
   SidebarItem(path: '/messages',                     label: 'Mensagens',     icon: Icons.chat_bubble_outline,                  selectedIcon: Icons.chat_bubble),
-  SidebarItem(path: '/appointments',                 label: 'Marcações',     icon: Icons.event_available_outlined,             selectedIcon: Icons.event_available),
+  SidebarItem(path: '/photos',                       label: 'Galeria',       icon: Icons.photo_library_outlined,               selectedIcon: Icons.photo_library),
+  SidebarItem(path: '/events',                       label: 'Calendário',    icon: Icons.calendar_month_outlined,              selectedIcon: Icons.calendar_month),
+  SidebarItem(path: '/documents',                    label: 'Documentos',    icon: Icons.folder_outlined,                      selectedIcon: Icons.folder),
+  SidebarItem(path: '/trip-authorizations',          label: 'Autorizações',  icon: Icons.assignment_outlined,                  selectedIcon: Icons.assignment),
+  SidebarItem(path: '/pickup-authorizations',        label: 'Levantamentos', icon: Icons.transfer_within_a_station_outlined,   selectedIcon: Icons.transfer_within_a_station),
   SidebarItem(path: '/parent/menu',                  label: 'Cardápio',      icon: Icons.restaurant_outlined,                  selectedIcon: Icons.restaurant),
+  SidebarItem(path: '/appointments',                 label: 'Marcações',     icon: Icons.event_available_outlined,             selectedIcon: Icons.event_available),
   SidebarItem(path: '/notifications',                label: 'Notificações',  icon: Icons.notifications_outlined,               selectedIcon: Icons.notifications),
 ];
 
@@ -400,9 +405,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         return _roleHome(role);
       }
 
-      // Finance routes: admin only (not parent — parent uses /parent/invoices)
+      // Admin finance/absence routes: admin only (parent uses /parent/invoices)
       if ((path.startsWith('/admin/finance') ||
-              path == '/health/immunizations' ||
               path.startsWith('/admin/absences')) &&
           role == UserRole.parent) {
         return '/parent';

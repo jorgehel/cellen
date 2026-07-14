@@ -239,7 +239,7 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
                             '/messages/broadcast',
                             data: {
                               'subject': subjectCtrl.text.trim(),
-                              'message': messageCtrl.text.trim(),
+                              'body': messageCtrl.text.trim(),
                               'target': selectedTarget,
                             },
                           );
@@ -282,81 +282,220 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
     );
   }
 
-  void _showNewThreadDialog() {
+  Future<void> _showNewThreadDialog() async {
+    // Load available users to message
+    List<Map<String, dynamic>> users = [];
+    try {
+      final api = ref.read(apiClientProvider);
+      final data = await api.get('/schools/users') as List;
+      users = data.cast<Map<String, dynamic>>();
+    } catch (_) {
+      // If user listing fails (non-admin), try employees + guardians
+      try {
+        final api = ref.read(apiClientProvider);
+        final empData = await api.get('/employees') as List;
+        for (final e in empData) {
+          final m = e as Map<String, dynamic>;
+          users.add({
+            'id': m['id'],
+            'username': '${m['first_name'] ?? ''} ${m['last_name'] ?? ''}'.trim(),
+            'role': m['employee_type'] ?? 'staff',
+          });
+        }
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+
     final subjectCtrl = TextEditingController();
     final messageCtrl = TextEditingController();
+    final searchCtrl = TextEditingController();
+    final selectedParticipants = <String>{};
     bool isLoading = false;
+    String searchQuery = '';
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('Nova Mensagem'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: subjectCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Assunto',
-                  border: OutlineInputBorder(),
+        builder: (ctx, setDialogState) {
+          final filtered = searchQuery.isEmpty
+              ? users
+              : users.where((u) {
+                  final name = (u['username'] ?? '').toString().toLowerCase();
+                  return name.contains(searchQuery.toLowerCase());
+                }).toList();
+
+          return AlertDialog(
+            title: const Text('Nova Mensagem'),
+            content: SizedBox(
+              width: 440,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      controller: subjectCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Assunto *',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Participant search
+                    TextField(
+                      controller: searchCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Pesquisar destinatário *',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.search),
+                        hintText: 'Nome do utilizador...',
+                      ),
+                      onChanged: (v) =>
+                          setDialogState(() => searchQuery = v),
+                    ),
+                    if (selectedParticipants.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: selectedParticipants.map((pid) {
+                          final user = users.firstWhere(
+                            (u) => u['id']?.toString() == pid,
+                            orElse: () => {'username': pid},
+                          );
+                          return Chip(
+                            label: Text(
+                              user['username']?.toString() ?? pid,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            deleteIcon: const Icon(Icons.close, size: 16),
+                            onDeleted: () => setDialogState(
+                                () => selectedParticipants.remove(pid)),
+                            visualDensity: VisualDensity.compact,
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                    if (filtered.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 150),
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: filtered.length,
+                          itemBuilder: (_, i) {
+                            final u = filtered[i];
+                            final uid = u['id']?.toString() ?? '';
+                            final selected =
+                                selectedParticipants.contains(uid);
+                            return ListTile(
+                              dense: true,
+                              visualDensity: VisualDensity.compact,
+                              leading: Icon(
+                                selected
+                                    ? Icons.check_circle
+                                    : Icons.person_outline,
+                                color: selected
+                                    ? Theme.of(ctx).colorScheme.primary
+                                    : null,
+                                size: 20,
+                              ),
+                              title: Text(
+                                u['username']?.toString() ?? '',
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                              subtitle: Text(
+                                u['role']?.toString() ?? '',
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                              onTap: () {
+                                setDialogState(() {
+                                  if (selected) {
+                                    selectedParticipants.remove(uid);
+                                  } else {
+                                    selectedParticipants.add(uid);
+                                  }
+                                });
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: messageCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Mensagem',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 3,
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: messageCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Mensagem',
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 4,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: isLoading
+                    ? null
+                    : () async {
+                        if (subjectCtrl.text.trim().isEmpty) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            const SnackBar(
+                                content: Text('Preencha o assunto')),
+                          );
+                          return;
+                        }
+                        if (selectedParticipants.isEmpty) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            const SnackBar(
+                                content: Text(
+                                    'Seleccione pelo menos um destinatário')),
+                          );
+                          return;
+                        }
+                        setDialogState(() => isLoading = true);
+                        try {
+                          await ref.read(apiClientProvider).post(
+                            '/messages/threads',
+                            data: {
+                              'subject': subjectCtrl.text.trim(),
+                              'participant_ids':
+                                  selectedParticipants.toList(),
+                              if (messageCtrl.text.trim().isNotEmpty)
+                                'message': messageCtrl.text.trim(),
+                            },
+                          );
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          ref.invalidate(messageThreadsProvider);
+                        } catch (e) {
+                          if (ctx.mounted) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              SnackBar(content: Text('Erro: $e')),
+                            );
+                          }
+                        } finally {
+                          setDialogState(() => isLoading = false);
+                        }
+                      },
+                child: isLoading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Enviar'),
               ),
             ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: isLoading
-                  ? null
-                  : () async {
-                      if (subjectCtrl.text.trim().isEmpty ||
-                          messageCtrl.text.trim().isEmpty) {
-                        return;
-                      }
-                      setDialogState(() => isLoading = true);
-                      try {
-                        await ref.read(apiClientProvider).post(
-                          '/messages/threads',
-                          data: {
-                            'subject': subjectCtrl.text.trim(),
-                            'body': messageCtrl.text.trim(),
-                          },
-                        );
-                        if (ctx.mounted) Navigator.pop(ctx);
-                        ref.invalidate(messageThreadsProvider);
-                      } catch (e) {
-                        if (ctx.mounted) {
-                          ScaffoldMessenger.of(ctx).showSnackBar(
-                            SnackBar(content: Text('Erro: $e')),
-                          );
-                        }
-                      } finally {
-                        setDialogState(() => isLoading = false);
-                      }
-                    },
-              child: isLoading
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Enviar'),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

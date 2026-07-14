@@ -20,8 +20,8 @@ class Food(Base):
         UUID(as_uuid=True), ForeignKey("schools.id", ondelete="RESTRICT"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(String(500))
-    food_type: Mapped[Optional[str]] = mapped_column(String(50))  # breakfast, lunch, snack, etc.
+    details: Mapped[Optional[str]] = mapped_column(String(500))
+    type: Mapped[Optional[str]] = mapped_column(String(50))  # breakfast, lunch, snack, etc.
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

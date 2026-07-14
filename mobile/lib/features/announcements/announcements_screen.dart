@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/auth/auth_provider.dart';
@@ -377,13 +378,16 @@ class _AnnouncementCardState extends State<_AnnouncementCard> {
                         size: 16, color: AppTheme.primary),
                     const SizedBox(width: 4),
                     GestureDetector(
-                      onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                                'Abrir: ${a.attachmentName ?? a.attachmentUrl}'),
-                          ),
-                        );
+                      onTap: () async {
+                        final rawUrl = a.attachmentUrl!;
+                        final fullUrl = rawUrl.startsWith('http')
+                            ? rawUrl
+                            : '$kMediaBase$rawUrl';
+                        final uri = Uri.parse(fullUrl);
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri,
+                              mode: LaunchMode.externalApplication);
+                        }
                       },
                       child: Text(
                         a.attachmentName ?? 'Anexo',

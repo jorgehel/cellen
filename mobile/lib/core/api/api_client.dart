@@ -199,6 +199,17 @@ class ApiClient {
     }
   }
 
+  /// Post multipart/form-data with a pre-built map (may contain MultipartFile entries).
+  Future<dynamic> postForm(String path, {required Map<String, dynamic> data}) async {
+    try {
+      final formData = FormData.fromMap(data);
+      final response = await _dio.post(path, data: formData);
+      return response.data;
+    } on DioException catch (e) {
+      throw _mapException(e);
+    }
+  }
+
   static String _mimeFromName(String filename) {
     final ext = filename.split('.').last.toLowerCase();
     return switch (ext) {

@@ -35,9 +35,9 @@ class PickupAuth {
         id: json['id']?.toString() ?? '',
         childId: json['child_id']?.toString() ?? '',
         childName: json['child_name'] as String?,
-        authorizedName: json['authorized_name'] as String? ?? '',
+        authorizedName: json['authorized_person_name'] as String? ?? '',
         relationship: json['relationship'] as String?,
-        phone: json['phone'] as String?,
+        phone: json['mobile'] as String?,
         idCardNumber: json['id_card_number'] as String?,
         notes: json['notes'] as String?,
         isActive: json['is_active'] as bool? ?? true,
@@ -422,10 +422,10 @@ class _AddPickupDialogState extends ConsumerState<_AddPickupDialog> {
       final api = ref.read(apiClientProvider);
       await api.post('/pickup-authorizations', data: {
         'child_id': _selectedChildId,
-        'authorized_name': _nameCtrl.text.trim(),
+        'authorized_person_name': _nameCtrl.text.trim(),
         if (_relationship != null) 'relationship': _relationship,
         if (_phoneCtrl.text.trim().isNotEmpty)
-          'phone': _phoneCtrl.text.trim(),
+          'mobile': _phoneCtrl.text.trim(),
         if (_idCardCtrl.text.trim().isNotEmpty)
           'id_card_number': _idCardCtrl.text.trim(),
         if (_notesCtrl.text.trim().isNotEmpty)

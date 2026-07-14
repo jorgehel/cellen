@@ -35,7 +35,7 @@ class _FoodItem {
   factory _FoodItem.fromJson(Map<String, dynamic> json) => _FoodItem(
         id: json['id']?.toString() ?? '',
         name: json['name'] as String? ?? '',
-        foodType: json['food_type'] as String?,
+        foodType: json['type'] as String?,
       );
 
   @override
@@ -617,7 +617,7 @@ class _MenuDetailPageState extends ConsumerState<_MenuDetailPage> {
                 try {
                   await ref.read(apiClientProvider).post('/food/foods', data: {
                     'name': nameCtrl.text.trim(),
-                    'food_type': selectedType,
+                    'type': selectedType,
                   });
                   ref.invalidate(adminFoodsProvider);
                   if (ctx.mounted) Navigator.pop(ctx);
