@@ -144,7 +144,7 @@ class Payment(Base):
         UUID(as_uuid=True), ForeignKey("children.id", ondelete="RESTRICT"), nullable=False
     )
     received_by: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
+        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="RESTRICT"), nullable=True
     )
     payment_date: Mapped[date] = mapped_column(Date, default=date.today)
     receipt_number: Mapped[Optional[str]] = mapped_column(String(100))
