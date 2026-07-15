@@ -32,6 +32,7 @@ from app.routers import (
     immunizations,
     trip_authorizations,
     pickup_authorizations,
+    website,
 )
 
 app = FastAPI(
@@ -46,10 +47,12 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://jorgehel.github.io",  # Flutter web (GitHub Pages)
+        "https://jorgehel.github.io",  # Flutter web & website (GitHub Pages)
         "http://localhost",
         "http://localhost:3000",
         "http://localhost:8080",
+        "https://cellen.ao",
+        "https://www.cellen.ao",
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -84,6 +87,7 @@ app.include_router(health_events.router, prefix="/api/v1")
 app.include_router(immunizations.router, prefix="/api/v1")
 app.include_router(trip_authorizations.router, prefix="/api/v1")
 app.include_router(pickup_authorizations.router, prefix="/api/v1")
+app.include_router(website.router, prefix="/api/v1")
 
 # Ensure media directory exists and mount static files
 _media_path = Path(settings.MEDIA_DIR)

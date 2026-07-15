@@ -31,6 +31,9 @@ from app.models.immunization import Immunization  # noqa: F401
 from app.models.finance import (  # noqa: F401
     ExpenseCategory, Expense, Invoice, Payment, PaymentInvoice
 )
+from app.models.website import (  # noqa: F401
+    WebsiteSetting, WebsitePage, WebsiteSection, WebsiteMedia
+)
 
 target_metadata = Base.metadata
 
