@@ -48,6 +48,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://jorgehel.github.io",  # Flutter web & website (GitHub Pages)
+        "https://softensor.github.io",
         "http://localhost",
         "http://localhost:3000",
         "http://localhost:8080",
