@@ -109,6 +109,14 @@ class PageWithSections(PageResponse):
     sections: list[SectionResponse] = []
 
 
+class ContactSubmission(BaseModel):
+    name: str
+    email: str
+    phone: Optional[str] = None
+    message: str
+    school: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # PUBLIC endpoints — no auth, used by the website frontend
 # ---------------------------------------------------------------------------
@@ -175,6 +183,23 @@ async def public_get_page(slug: str, db: AsyncSession = Depends(get_db)):
     sections = sections_result.scalars().all()
 
     return {**page.__dict__, "sections": sections}
+
+
+@router.post("/public/contact")
+async def public_submit_contact(
+    body: ContactSubmission,
+    db: AsyncSession = Depends(get_db),
+):
+    """Receive a contact-form submission from the public website."""
+    from app.models.website import WebsiteSetting
+
+    contact_log = WebsiteSetting(
+        key=f"contact_{datetime.utcnow().isoformat()}",
+        value=body.model_dump(),
+    )
+    db.add(contact_log)
+    await db.commit()
+    return {"success": True, "message": "Mensagem enviada. Entraremos em contacto em breve."}
 
 
 # ---------------------------------------------------------------------------
