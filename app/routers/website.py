@@ -380,6 +380,23 @@ async def admin_list_sections(
     return result.scalars().all()
 
 
+@router.get("/admin/sections/{section_id}", response_model=SectionResponse)
+async def admin_get_section(
+    section_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_platform_admin),
+):
+    from app.models.website import WebsiteSection
+
+    result = await db.execute(
+        select(WebsiteSection).where(WebsiteSection.id == section_id)
+    )
+    section = result.scalar_one_or_none()
+    if section is None:
+        raise HTTPException(status_code=404, detail="Section not found")
+    return section
+
+
 @router.post("/admin/sections", response_model=SectionResponse, status_code=status.HTTP_201_CREATED)
 async def admin_create_section(
     body: SectionCreate,

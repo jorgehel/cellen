@@ -21,6 +21,11 @@ import '../../features/admin/academic/enrollments_screen.dart';
 import '../../features/admin/absences/absences_screen.dart';
 import '../../features/platform/dashboard/platform_dashboard_screen.dart';
 import '../../features/platform/schools/schools_screen.dart';
+import '../../features/platform/website/website_dashboard_screen.dart';
+import '../../features/platform/website/website_page_editor_screen.dart';
+import '../../features/platform/website/website_section_editor_screen.dart';
+import '../../features/platform/website/website_settings_screen.dart';
+import '../../features/platform/website/website_media_screen.dart';
 import '../../features/teacher/dashboard/teacher_dashboard_screen.dart';
 import '../../features/teacher/caderneta/caderneta_list_screen.dart';
 import '../../features/teacher/caderneta/caderneta_form_screen.dart';
@@ -276,6 +281,7 @@ const _parentItems = [
 const _platformItems = [
   SidebarItem(path: '/platform',                     label: 'Dashboard',     icon: Icons.dashboard_outlined,                   selectedIcon: Icons.dashboard),
   SidebarItem(path: '/platform/schools',             label: 'Escolas',       icon: Icons.school_outlined,                      selectedIcon: Icons.school),
+  SidebarItem(path: '/platform/website',             label: 'Website',       icon: Icons.language_outlined,                    selectedIcon: Icons.language),
 ];
 
 // ---------------------------------------------------------------------------
@@ -428,6 +434,16 @@ final routerProvider = Provider<GoRouter>((ref) {
           // ── Platform admin ───────────────────────────────────────────────
           GoRoute(path: '/platform',         builder: (_, __) => const PlatformDashboardScreen()),
           GoRoute(path: '/platform/schools', builder: (_, __) => const SchoolsScreen()),
+
+          // ── Platform: Website CMS ────────────────────────────────────────────
+          GoRoute(path: '/platform/website', builder: (_, __) => const WebsiteDashboardScreen()),
+          GoRoute(path: '/platform/website/pages/:pageId', builder: (_, s) => WebsitePageEditorScreen(pageId: s.pathParameters['pageId']!)),
+          GoRoute(path: '/platform/website/pages/:pageId/sections/:sectionId', builder: (_, s) => WebsiteSectionEditorScreen(
+            pageId: s.pathParameters['pageId']!,
+            sectionId: s.pathParameters['sectionId']!,
+          )),
+          GoRoute(path: '/platform/website/settings', builder: (_, __) => const WebsiteSettingsScreen()),
+          GoRoute(path: '/platform/website/media', builder: (_, __) => const WebsiteMediaScreen()),
 
           // ── School admin ─────────────────────────────────────────────────
           GoRoute(path: '/admin',                      builder: (_, __) => const AdminDashboardScreen()),
