@@ -920,6 +920,31 @@ async def list_payments(
     return output
 
 
+@router.get("/payments/{payment_id}", response_model=PaymentResponse)
+async def get_payment(
+    payment_id: uuid.UUID,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_finance_access),
+):
+    result = await db.execute(
+        select(Payment).where(Payment.id == payment_id, Payment.school_id == school_id)
+    )
+    p = result.scalar_one_or_none()
+    if p is None:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    alloc_r = await db.execute(
+        select(PaymentAllocation).where(PaymentAllocation.payment_id == p.id)
+    )
+    allocs = alloc_r.scalars().all()
+    data = PaymentResponse.model_validate(p)
+    data.allocated_invoices = [
+        {"invoice_id": str(a.invoice_id), "amount_applied": float(a.amount_applied)}
+        for a in allocs
+    ]
+    return data
+
+
 @router.post("/payments", response_model=PaymentResponse, status_code=201)
 async def create_payment(
     body: PaymentCreate,

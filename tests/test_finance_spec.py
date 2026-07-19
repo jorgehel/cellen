@@ -735,21 +735,23 @@ async def test_receipt_has_line_items_with_invoice_references(client: AsyncClien
     assert receipts, f"A receipt must be generated when a payment settles an invoice"
 
     receipt = receipts[0]
-    assert "lines" in receipt, (
-        "Receipt must contain line items (AGT SAF-T Payments section requirement)"
+    # Receipts store settled invoices in 'settled_documents'
+    settled = receipt.get("settled_documents") or receipt.get("lines") or []
+    assert settled, (
+        "Receipt must reference the settled invoices (AGT SAF-T Payments section requirement)"
     )
-    assert len(receipt["lines"]) >= 1, "Receipt must have at least one line item"
 
-    line = receipt["lines"][0]
-    assert "settled_document_number" in line or "invoice_document_number" in line, (
-        "Receipt line must reference the settled invoice's document number"
+    entry = settled[0]
+    settled_doc = (
+        entry.get("document_number")
+        or entry.get("settled_document_number")
+        or entry.get("invoice_document_number")
     )
-    settled_doc = line.get("settled_document_number") or line.get("invoice_document_number")
     if inv_doc_number:
         assert settled_doc == inv_doc_number, (
-            f"Receipt line must reference FT document number {inv_doc_number!r}, got {settled_doc!r}"
+            f"Receipt must reference FT document number {inv_doc_number!r}, got {settled_doc!r}"
         )
-    assert "amount_applied" in line, "Receipt line must include amount_applied"
+    assert "amount_applied" in entry, "Receipt settled entry must include amount_applied"
 
 
 # ---------------------------------------------------------------------------

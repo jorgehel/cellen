@@ -422,6 +422,13 @@ class PaymentIntakeService:
         remaining = amount
 
         if target_invoice_ids:
+            # Validate all target invoices belong to this guardian before applying any
+            for inv_id in target_invoice_ids:
+                inv = await self._get_invoice(inv_id)
+                if inv is not None and inv.billing_guardian_id and inv.billing_guardian_id != billing_guardian_id:
+                    raise ValueError(
+                        f"Invoice {inv_id} does not belong to the specified billing guardian"
+                    )
             for inv_id in target_invoice_ids:
                 if remaining <= 0:
                     break
