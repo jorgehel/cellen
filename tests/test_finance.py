@@ -186,7 +186,7 @@ async def test_payment_amount_is_number(client, make_school):
         "/finance/payments",
         json={
             "billing_guardian_id": ctx["guardian_id"],
-            "payment_method": "cash",
+            "payment_method": "transfer",
             "amount": 200.00,
             "payment_date": "2026-02-10",
         },
@@ -387,7 +387,7 @@ async def test_full_payment_marks_paid(client, make_school):
         "/finance/payments",
         json={
             "billing_guardian_id": ctx["guardian_id"],
-            "payment_method": "cash",
+            "payment_method": "transfer",
             "amount": 500.00,
             "payment_date": "2026-07-10",
             "target_invoice_ids": [inv_id],
@@ -426,7 +426,7 @@ async def test_partial_payment(client, make_school):
         "/finance/payments",
         json={
             "billing_guardian_id": ctx["guardian_id"],
-            "payment_method": "cash",
+            "payment_method": "transfer",
             "amount": 200.00,
             "payment_date": "2026-08-05",
             "target_invoice_ids": [inv_id],
@@ -469,13 +469,12 @@ async def test_void_invoice(client, make_school):
     )
     assert void_r.status_code in (200, 201), void_r.text
     cn = void_r.json()
-    assert "id" in cn
-    assert "full_document_number" in cn
+    assert "credit_note_id" in cn, f"Void response must include credit_note_id; got: {cn}"
 
     cn_list_r = await client.get("/finance/credit-notes", headers=void_hdrs)
     assert cn_list_r.status_code == 200
     cn_ids = [c["id"] for c in cn_list_r.json()]
-    assert cn["id"] in cn_ids
+    assert cn["credit_note_id"] in cn_ids
 
 
 async def test_school_invoice_isolation(client, make_school):
@@ -521,7 +520,7 @@ async def test_create_payment_no_allocation(client, make_school):
         "/finance/payments",
         json={
             "billing_guardian_id": ctx["guardian_id"],
-            "payment_method": "cash",
+            "payment_method": "transfer",
             "amount": 100.00,
             "payment_date": "2026-01-05",
         },
@@ -555,7 +554,7 @@ async def test_payment_with_allocation(client, make_school):
         "/finance/payments",
         json={
             "billing_guardian_id": ctx["guardian_id"],
-            "payment_method": "cash",
+            "payment_method": "transfer",
             "amount": 300.00,
             "payment_date": "2026-11-10",
             "target_invoice_ids": [inv_id],
@@ -581,7 +580,7 @@ async def test_list_payments(client, make_school):
         "/finance/payments",
         json={
             "billing_guardian_id": ctx["guardian_id"],
-            "payment_method": "cash",
+            "payment_method": "transfer",
             "amount": 50.00,
             "payment_date": "2026-01-15",
         },

@@ -2229,6 +2229,22 @@ async def create_expense(
     return expense
 
 
+@router.get("/expenses/{expense_id}", response_model=ExpenseResponse)
+async def get_expense(
+    expense_id: uuid.UUID,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_finance_access),
+):
+    result = await db.execute(
+        select(Expense).where(Expense.id == expense_id, Expense.school_id == school_id)
+    )
+    expense = result.scalar_one_or_none()
+    if expense is None:
+        raise HTTPException(status_code=404, detail="Expense not found")
+    return expense
+
+
 @router.patch("/expenses/{expense_id}", response_model=ExpenseResponse)
 async def update_expense(
     expense_id: uuid.UUID,
