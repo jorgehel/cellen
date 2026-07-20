@@ -365,7 +365,7 @@ class _CreateRefDialogState extends ConsumerState<_CreateRefDialog> {
                       value: _selectedGuardianId,
                       decoration: const InputDecoration(labelText: 'Encarregado *'),
                       isExpanded: true,
-                      items: _guardians.map((g) => DropdownMenuItem(value: g['id']?.toString(), child: Text('${g['full_name'] ?? g['name'] ?? ''}', overflow: TextOverflow.ellipsis))).toList(),
+                      items: _guardians.map((g) => DropdownMenuItem(value: g['id']?.toString(), child: Text('${g['first_name'] ?? ''} ${g['last_name'] ?? ''}'.trim(), overflow: TextOverflow.ellipsis))).toList(),
                       onChanged: (v) {
                         setState(() { _selectedGuardianId = v; _selectedInvoiceId = null; _invoices = []; });
                         if (v != null) _loadInvoices(v);

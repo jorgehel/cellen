@@ -55,6 +55,39 @@ final receiptsProvider =
 // ---------------------------------------------------------------------------
 // Screen
 // ---------------------------------------------------------------------------
+void _showDetail(BuildContext context, Receipt r, NumberFormat currency) {
+  showModalBottomSheet(
+    context: context,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+    builder: (_) => Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.receipt, color: AppTheme.success, size: 28),
+            const SizedBox(width: 10),
+            Text(r.fullDocumentNumber, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, fontFamily: 'monospace')),
+          ]),
+          const Divider(height: 20),
+          _row('Valor', currency.format(r.amount)),
+          if (r.nifCliente != null) _row('NIF Cliente', r.nifCliente!),
+          if (r.issuedAt.isNotEmpty) _row('Data', r.issuedAt.length >= 10 ? r.issuedAt.substring(0, 10) : r.issuedAt),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _row(String label, String value) => Padding(
+  padding: const EdgeInsets.symmetric(vertical: 4),
+  child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+    Text(label, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+    Text(value, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+  ]),
+);
+
 class ReceiptsScreen extends ConsumerWidget {
   const ReceiptsScreen({super.key});
 
@@ -126,6 +159,7 @@ class ReceiptsScreen extends ConsumerWidget {
                 return Card(
                   margin: const EdgeInsets.only(bottom: 8),
                   child: ListTile(
+                    onTap: () => _showDetail(context, r, currency),
                     leading: Container(
                       width: 44,
                       height: 44,

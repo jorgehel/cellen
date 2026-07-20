@@ -77,13 +77,13 @@ class _StatementScreenState extends ConsumerState<StatementScreen> {
                         isExpanded: true,
                         items: _guardians.map((g) => DropdownMenuItem(
                           value: g['id']?.toString(),
-                          child: Text('${g['full_name'] ?? g['name'] ?? ''}', overflow: TextOverflow.ellipsis),
+                          child: Text('${g['first_name'] ?? ''} ${g['last_name'] ?? ''}'.trim(), overflow: TextOverflow.ellipsis),
                         )).toList(),
                         onChanged: (v) {
                           final g = _guardians.where((g) => g['id']?.toString() == v).firstOrNull;
                           setState(() {
                             _selectedGuardianId = v;
-                            _selectedGuardianName = g?['full_name'] as String? ?? g?['name'] as String?;
+                            _selectedGuardianName = '${g?['first_name'] ?? ''} ${g?['last_name'] ?? ''}'.trim();
                             _statement = null;
                           });
                         },

@@ -301,6 +301,7 @@ class _ParentInvoicesScreenState extends ConsumerState<ParentInvoicesScreen>
 
           // ── Tab 2: Recibos ─────────────────────────────────────────────
           _ReceiptsTab(currency: currency),
+
         ],
       ),
     );
@@ -580,6 +581,57 @@ class _StatementTab extends ConsumerWidget {
   }
 }
 
+void _showReceiptDetail(BuildContext context, Map<String, dynamic> r, NumberFormat currency) {
+  final docNum = r['full_document_number'] as String? ?? '—';
+  final rawDate = r['invoice_date'] as String? ?? r['system_entry_date'] as String? ?? '';
+  String dateLabel = rawDate;
+  try { dateLabel = rawDate.isNotEmpty ? rawDate.substring(0, 10) : ''; } catch (_) {}
+  final amount = (r['gross_total'] as num?)?.toDouble() ?? 0;
+  final customerName = r['customer_name'] as String?;
+  final customerNif = r['customer_nif'] as String?;
+  final status = r['status'] as String? ?? '';
+  showModalBottomSheet(
+    context: context,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+    builder: (_) => Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.receipt_long_outlined, color: Colors.green, size: 28),
+            const SizedBox(width: 10),
+            Text(docNum, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, fontFamily: 'monospace')),
+            const Spacer(),
+            if (status.isNotEmpty) Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+              child: Text(status.toUpperCase(), style: const TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.bold)),
+            ),
+          ]),
+          const Divider(height: 20),
+          if (customerName != null) _detailRow('Cliente', customerName),
+          if (customerNif != null) _detailRow('NIF', customerNif),
+          _detailRow('Data', dateLabel),
+          _detailRow('Valor', currency.format(amount)),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _detailRow(String label, String value) => Padding(
+  padding: const EdgeInsets.symmetric(vertical: 4),
+  child: Row(
+    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    children: [
+      Text(label, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+      Text(value, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+    ],
+  ),
+);
+
 // Receipts tab
 class _ReceiptsTab extends ConsumerWidget {
   final NumberFormat currency;
@@ -612,8 +664,12 @@ class _ReceiptsTab extends ConsumerWidget {
             itemBuilder: (_, i) {
               final r = receipts[i];
               final docNum = r['full_document_number'] as String? ?? r['document_number'] as String? ?? '—';
-              final date = r['issue_date'] as String? ?? r['payment_date'] as String? ?? '';
-              final amount = (r['total_amount'] as num?)?.toDouble() ?? (r['amount'] as num?)?.toDouble() ?? 0;
+              final rawDate = r['invoice_date'] as String? ?? r['system_entry_date'] as String? ?? '';
+              String dateLabel = rawDate;
+              try { dateLabel = rawDate.isNotEmpty ? rawDate.substring(0, 10) : ''; } catch (_) {}
+              final amount = (r['gross_total'] as num?)?.toDouble() ?? 0;
+              final customerName = r['customer_name'] as String?;
+              final status = r['status'] as String? ?? '';
               return Card(
                 margin: const EdgeInsets.only(bottom: 6),
                 elevation: 0,
@@ -623,9 +679,10 @@ class _ReceiptsTab extends ConsumerWidget {
                 ),
                 child: ListTile(
                   dense: true,
+                  onTap: () => _showReceiptDetail(context, r, currency),
                   leading: const Icon(Icons.receipt_long_outlined, color: Colors.green),
                   title: Text(docNum, style: const TextStyle(fontWeight: FontWeight.w700, fontFamily: 'monospace', fontSize: 13)),
-                  subtitle: Text(date, style: const TextStyle(fontSize: 11)),
+                  subtitle: Text(customerName != null ? '$customerName · $dateLabel' : dateLabel, style: const TextStyle(fontSize: 11)),
                   trailing: Text(currency.format(amount), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
                 ),
               );

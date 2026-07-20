@@ -5,9 +5,16 @@ import 'package:intl/intl.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/theme/app_theme.dart';
 
-final _auditLogProvider = FutureProvider.autoDispose.family<List<Map<String, dynamic>>, Map<String, String>>((ref, params) async {
+// Key is a sorted query string like "action=void&entity_type=invoice" to ensure stable equality
+final _auditLogProvider = FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>((ref, paramsKey) async {
   final api = ref.read(apiClientProvider);
-  final data = await api.get('/finance/audit-log', queryParameters: params.isEmpty ? null : params) as List;
+  final queryParams = <String, String>{};
+  for (final entry in paramsKey.split('&')) {
+    if (entry.isEmpty) continue;
+    final idx = entry.indexOf('=');
+    if (idx > 0) queryParams[entry.substring(0, idx)] = Uri.decodeComponent(entry.substring(idx + 1));
+  }
+  final data = await api.get('/finance/audit-log', queryParameters: queryParams.isEmpty ? null : queryParams) as List;
   return data.cast<Map<String, dynamic>>();
 });
 
@@ -45,15 +52,22 @@ class _AuditLogScreenState extends ConsumerState<AuditLogScreen> {
     return p;
   }
 
+  String get _paramsKey {
+    final p = _params;
+    if (p.isEmpty) return '';
+    final sorted = p.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
+    return sorted.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&');
+  }
+
   @override
   Widget build(BuildContext context) {
-    final logAsync = ref.watch(_auditLogProvider(_params));
+    final logAsync = ref.watch(_auditLogProvider(_paramsKey));
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Registo de Auditoria'),
         actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: () => ref.invalidate(_auditLogProvider)),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: () => ref.invalidate(_auditLogProvider(_paramsKey))),
         ],
       ),
       body: Column(

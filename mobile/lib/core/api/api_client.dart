@@ -26,8 +26,8 @@ class AuthInterceptor extends Interceptor {
   final Dio _dio;
   final FlutterSecureStorage _storage;
 
-  // Prevent recursive refresh loops
   bool _isRefreshing = false;
+  final List<({RequestOptions options, ErrorInterceptorHandler handler, DioException error})> _queue = [];
 
   AuthInterceptor(this._dio, this._storage);
 
@@ -48,13 +48,19 @@ class AuthInterceptor extends Interceptor {
     DioException err,
     ErrorInterceptorHandler handler,
   ) async {
-    if (err.response?.statusCode == 401 && !_isRefreshing) {
+    if (err.response?.statusCode == 401) {
+      if (_isRefreshing) {
+        // Queue this request to retry after refresh completes
+        _queue.add((options: err.requestOptions, handler: handler, error: err));
+        return;
+      }
       _isRefreshing = true;
       try {
         final refreshToken = await _storage.read(key: kRefreshTokenKey);
         if (refreshToken == null || refreshToken.isEmpty) {
           await _clearTokens();
           _isRefreshing = false;
+          _flushQueue(null);
           handler.next(err);
           return;
         }
@@ -70,19 +76,20 @@ class AuthInterceptor extends Interceptor {
         if (newAccess == null || newAccess.isEmpty) {
           await _clearTokens();
           _isRefreshing = false;
+          _flushQueue(null);
           handler.next(err);
           return;
         }
 
         await _storage.write(key: kAccessTokenKey, value: newAccess);
 
-        // Check if a new refresh token is also returned
         final newRefresh = refreshResponse.data['refresh_token'] as String?;
         if (newRefresh != null && newRefresh.isNotEmpty) {
           await _storage.write(key: kRefreshTokenKey, value: newRefresh);
         }
 
         _isRefreshing = false;
+        _flushQueue(newAccess);
 
         // Retry original request with new token
         final retryOptions = err.requestOptions;
@@ -92,6 +99,7 @@ class AuthInterceptor extends Interceptor {
       } catch (_) {
         await _clearTokens();
         _isRefreshing = false;
+        _flushQueue(null);
         handler.next(err);
       }
     } else {
@@ -102,6 +110,22 @@ class AuthInterceptor extends Interceptor {
   Future<void> _clearTokens() async {
     await _storage.delete(key: kAccessTokenKey);
     await _storage.delete(key: kRefreshTokenKey);
+  }
+
+  void _flushQueue(String? newToken) {
+    final pending = List.of(_queue);
+    _queue.clear();
+    for (final item in pending) {
+      if (newToken != null) {
+        item.options.headers['Authorization'] = 'Bearer $newToken';
+        _dio.fetch(item.options).then(
+          (resp) => item.handler.resolve(resp),
+          onError: (_) => item.handler.next(item.error),
+        );
+      } else {
+        item.handler.next(item.error);
+      }
+    }
   }
 }
 

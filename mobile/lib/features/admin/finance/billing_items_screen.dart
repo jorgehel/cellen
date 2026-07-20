@@ -210,8 +210,41 @@ class _BillingItemDialogState extends ConsumerState<_BillingItemDialog> {
   String _category = 'other';
   bool _isLoading = false;
   String? _error;
+  bool _codeManuallyEdited = false;
 
   bool get _isEdit => widget.item != null;
+
+  static String _generateCode(String name) {
+    const accents = {
+      'á': 'a', 'à': 'a', 'ã': 'a', 'â': 'a', 'ä': 'a',
+      'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
+      'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
+      'ó': 'o', 'ò': 'o', 'õ': 'o', 'ô': 'o', 'ö': 'o',
+      'ú': 'u', 'ù': 'u', 'û': 'u', 'ü': 'u',
+      'ç': 'c', 'ñ': 'n',
+    };
+    var s = name.toLowerCase();
+    for (final e in accents.entries) s = s.replaceAll(e.key, e.value);
+    final clean = s.replaceAll(RegExp(r'[^a-z0-9\s]'), '');
+    final words = clean.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    String code;
+    if (words.isEmpty) return '';
+    if (words.length == 1) {
+      code = words[0].substring(0, words[0].length.clamp(0, 8));
+    } else {
+      code = words.map((w) => w.substring(0, w.length.clamp(0, 3))).join();
+      if (code.length > 8) code = code.substring(0, 8);
+    }
+    return code.toUpperCase();
+  }
+
+  void _syncCode() {
+    if (_isEdit || _codeManuallyEdited) return;
+    final generated = _generateCode(_nameCtrl.text);
+    if (_codeCtrl.text != generated) {
+      _codeCtrl.value = TextEditingValue(text: generated, selection: TextSelection.collapsed(offset: generated.length));
+    }
+  }
 
   static const _categories = {
     'tuition': 'Mensalidade',
@@ -228,6 +261,7 @@ class _BillingItemDialogState extends ConsumerState<_BillingItemDialog> {
     final item = widget.item;
     _codeCtrl = TextEditingController(text: item?['code'] as String? ?? '');
     _nameCtrl = TextEditingController(text: item?['name'] as String? ?? '');
+    if (!_isEdit) _nameCtrl.addListener(_syncCode);
     _priceCtrl = TextEditingController(text: (item?['unit_price'] as num?)?.toStringAsFixed(2) ?? '');
     _ivaCtrl = TextEditingController(text: (item?['iva_rate'] as num?)?.toStringAsFixed(2) ?? '0');
     _exemptionCtrl = TextEditingController(text: item?['iva_exemption_reason'] as String? ?? '');
@@ -237,6 +271,7 @@ class _BillingItemDialogState extends ConsumerState<_BillingItemDialog> {
 
   @override
   void dispose() {
+    if (!_isEdit) _nameCtrl.removeListener(_syncCode);
     _codeCtrl.dispose(); _nameCtrl.dispose(); _priceCtrl.dispose();
     _ivaCtrl.dispose(); _exemptionCtrl.dispose(); _descCtrl.dispose();
     super.dispose();
@@ -283,8 +318,12 @@ class _BillingItemDialogState extends ConsumerState<_BillingItemDialog> {
                 if (!_isEdit) ...[
                   TextFormField(
                     controller: _codeCtrl,
-                    decoration: const InputDecoration(labelText: 'Código *', helperText: 'Imutável após criação'),
+                    decoration: const InputDecoration(labelText: 'Código *', helperText: 'Auto-gerado · Imutável após criação'),
                     textCapitalization: TextCapitalization.characters,
+                    onChanged: (v) {
+                      final generated = _generateCode(_nameCtrl.text);
+                      _codeManuallyEdited = v.isNotEmpty && v != generated;
+                    },
                     validator: (v) => v == null || v.trim().isEmpty ? 'Obrigatório' : null,
                   ),
                   const SizedBox(height: 12),

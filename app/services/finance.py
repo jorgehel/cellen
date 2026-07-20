@@ -1071,10 +1071,14 @@ async def get_account_statement(
     total_settled = Decimal("0")
     for event in events:
         running_balance += event["debit"] - event["credit"]
-        event["running_balance"] = running_balance
         total_invoiced += event["debit"]
         total_settled += event["credit"]
-        movements.append(event)
+        movements.append({
+            **event,
+            "debit": float(event["debit"]),
+            "credit": float(event["credit"]),
+            "running_balance": float(running_balance),
+        })
 
     credit_balance = await get_guardian_credit_balance(db, school_id, guardian_id)
 
