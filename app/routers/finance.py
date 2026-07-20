@@ -1564,16 +1564,35 @@ async def list_parent_invoices(
     )
     invoices = inv_result.scalars().all()
 
+    # Fetch active Multicaixa payment references for all these invoices in one query
+    invoice_ids = [inv.id for inv in invoices]
+    mcx_refs: dict[uuid.UUID, PaymentReference] = {}
+    if invoice_ids:
+        mcx_r = await db.execute(
+            select(PaymentReference).where(
+                PaymentReference.invoice_id.in_(invoice_ids),
+                PaymentReference.status == "active",
+            )
+        )
+        for ref in mcx_r.scalars().all():
+            if ref.invoice_id not in mcx_refs:
+                mcx_refs[ref.invoice_id] = ref
+
+    # Fetch child names in bulk
+    child_ids_needed = list({inv.child_id for inv in invoices if inv.child_id})
+    child_name_map: dict[uuid.UUID, str] = {}
+    if child_ids_needed:
+        cn_r = await db.execute(
+            select(Child.id, Child.first_name, Child.last_name).where(Child.id.in_(child_ids_needed))
+        )
+        child_name_map = {row[0]: f"{row[1]} {row[2]}" for row in cn_r.all()}
+
     output = []
     for inv in invoices:
         amount_paid = await get_invoice_amount_paid(db, inv.id)
         balance = await get_invoice_balance(db, inv.id)
-        child_name = "—"
-        if inv.child_id:
-            cr = await db.execute(select(Child.first_name, Child.last_name).where(Child.id == inv.child_id))
-            row = cr.first()
-            if row:
-                child_name = f"{row[0]} {row[1]}"
+        child_name = child_name_map.get(inv.child_id, "—") if inv.child_id else "—"
+        ref = mcx_refs.get(inv.id)
         output.append(ParentInvoiceResponse(
             id=inv.id,
             child_id=inv.child_id,
@@ -1586,6 +1605,8 @@ async def list_parent_invoices(
             due_date=inv.due_date,
             amount_paid=amount_paid,
             balance=balance,
+            multicaixa_entity=ref.entity if ref else None,
+            multicaixa_ref=ref.reference if ref else None,
         ))
     return output
 
@@ -1667,31 +1688,48 @@ async def parent_submit_payment(
         raise HTTPException(status_code=422, detail="invoice_id required")
 
     receipt_proof_url = body.get("receipt_proof_url")
-    if not receipt_proof_url:
-        raise HTTPException(status_code=400, detail="Comprovativo de pagamento obrigatório")
 
-    # Verify invoice belongs to this guardian
+    # Verify invoice belongs to this guardian (direct billing or via child linkage)
     inv_result = await db.execute(
         select(Invoice).where(Invoice.id == uuid.UUID(invoice_id))
     )
     invoice = inv_result.scalar_one_or_none()
     if invoice is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    if str(invoice.billing_guardian_id) != str(guardian_id):
-        raise HTTPException(status_code=403, detail="Not your invoice")
+
+    is_billing_guardian = invoice.billing_guardian_id and str(invoice.billing_guardian_id) == str(guardian_id)
+    if not is_billing_guardian:
+        # Check if invoice belongs to one of this guardian's children
+        child_ids_r = await db.execute(
+            select(ChildGuardian.child_id).where(ChildGuardian.guardian_id == guardian_id)
+        )
+        linked_child_ids = [str(r[0]) for r in child_ids_r.all()]
+        if not invoice.child_id or str(invoice.child_id) not in linked_child_ids:
+            raise HTTPException(status_code=403, detail="Not your invoice")
 
     # Create a pending-review payment
+    amount = Decimal(str(body.get("amount", invoice.gross_total)))
     payment = Payment(
         school_id=invoice.school_id,
         billing_guardian_id=guardian_id,
         payment_date=today_luanda(),
-        amount=Decimal(str(body.get("amount", invoice.gross_total))),
+        amount=amount,
         payment_method=body.get("payment_method", "multicaixa"),
         receipt_proof_url=receipt_proof_url,
-        notes=body.get("notes", "Submetido pelo encarregado"),
+        notes=body.get("notes") or "Submetido pelo encarregado",
         status="pending_review",
     )
     db.add(payment)
+    await db.flush()  # get payment.id before allocation
+
+    # Link payment to the specific invoice via allocation so admin can match it
+    allocation = PaymentAllocation(
+        payment_id=payment.id,
+        invoice_id=invoice.id,
+        amount_applied=amount,
+    )
+    db.add(allocation)
+
     await db.commit()
     await db.refresh(payment)
     return {"message": "Comprovativo submetido com sucesso", "payment_id": str(payment.id)}

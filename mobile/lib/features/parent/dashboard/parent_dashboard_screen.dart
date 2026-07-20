@@ -37,12 +37,10 @@ final parentRecentCadernetsProvider =
 final parentOutstandingInvoicesProvider =
     FutureProvider.autoDispose<List<Invoice>>((ref) async {
   final api = ref.read(apiClientProvider);
-  final data = await api.get('/parent/invoices',
-      queryParameters: {
-        'limit': '5',
-      }) as List;
+  final data = await api.get('/finance/parent/invoices') as List;
   return data
       .map((e) => Invoice.fromJson(e as Map<String, dynamic>))
+      .where((i) => i.status != 'paid' && i.status != 'cancelled')
       .toList();
 });
 

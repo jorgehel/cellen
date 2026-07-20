@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_school_id, require_school_admin, require_teacher, get_current_user
-from app.models.academic import Enrollment, Schedule
+from app.models.academic import Enrollment, Schedule, ScheduleTeacher
 from app.models.caderneta import Caderneta
 from app.models.finance import Invoice
 from app.models.person import Child, ChildGuardian
@@ -86,8 +86,20 @@ async def get_my_children(
         return result.scalars().all()
 
     elif role == "teacher":
+        employee_id = getattr(current_user, "employee_id", None)
+        if not employee_id:
+            return []
         result = await db.execute(
-            select(Child).where(Child.school_id == school_id, Child.is_active)
+            select(Child)
+            .join(Enrollment, Enrollment.child_id == Child.id)
+            .join(ScheduleTeacher, ScheduleTeacher.schedule_id == Enrollment.schedule_id)
+            .where(
+                Child.school_id == school_id,
+                Child.is_active,
+                Enrollment.status == "active",
+                ScheduleTeacher.employee_id == employee_id,
+            )
+            .distinct()
         )
         return result.scalars().all()
 
@@ -239,6 +251,20 @@ async def get_child_cadernetas(
     if child_result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Child not found")
 
+    # Parents can only access data for their own children
+    if getattr(current_user, "_role", None) == "parent":
+        guardian_id = getattr(current_user, "guardian_id", None)
+        if guardian_id is None:
+            raise HTTPException(status_code=403, detail="No guardian record linked")
+        link_result = await db.execute(
+            select(ChildGuardian).where(
+                ChildGuardian.guardian_id == guardian_id,
+                ChildGuardian.child_id == child_id,
+            )
+        )
+        if link_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=403, detail="Not your child")
+
     result = await db.execute(
         select(Caderneta)
         .where(Caderneta.child_id == child_id, Caderneta.school_id == school_id)
@@ -267,6 +293,20 @@ async def get_child_invoices(
     )
     if child_result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Child not found")
+
+    # Parents can only access data for their own children
+    if getattr(current_user, "_role", None) == "parent":
+        guardian_id = getattr(current_user, "guardian_id", None)
+        if guardian_id is None:
+            raise HTTPException(status_code=403, detail="No guardian record linked")
+        link_result = await db.execute(
+            select(ChildGuardian).where(
+                ChildGuardian.guardian_id == guardian_id,
+                ChildGuardian.child_id == child_id,
+            )
+        )
+        if link_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=403, detail="Not your child")
 
     result = await db.execute(
         select(Invoice)
@@ -299,6 +339,20 @@ async def get_child_balance(
     )
     if child_result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Child not found")
+
+    # Parents can only access data for their own children
+    if getattr(current_user, "_role", None) == "parent":
+        guardian_id = getattr(current_user, "guardian_id", None)
+        if guardian_id is None:
+            raise HTTPException(status_code=403, detail="No guardian record linked")
+        link_result = await db.execute(
+            select(ChildGuardian).where(
+                ChildGuardian.guardian_id == guardian_id,
+                ChildGuardian.child_id == child_id,
+            )
+        )
+        if link_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=403, detail="Not your child")
 
     balance = await get_outstanding_balance(db, school_id, child_id)
     return ChildBalance(child_id=child_id, outstanding_balance=balance)

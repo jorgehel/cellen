@@ -64,7 +64,7 @@ final adminFinanceProvider =
     FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
   final api = ref.read(apiClientProvider);
   try {
-    final data = await api.get('/finance/dashboard');
+    final data = await api.get('/finance/summary');
     if (data is Map<String, dynamic>) return data;
   } catch (_) {}
   return {};

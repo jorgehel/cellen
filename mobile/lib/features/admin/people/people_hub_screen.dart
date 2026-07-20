@@ -14,7 +14,7 @@ final _peopleSummaryProvider = FutureProvider.autoDispose<Map<String, int>>((ref
     api.get('/children') as Future,
     api.get('/guardians') as Future,
     api.get('/employees') as Future,
-    api.get('/enrollments?limit=1000') as Future,
+    api.get('/academic/enrollments', queryParameters: {'limit': '1000'}) as Future,
   ]);
   return {
     'children': (results[0] as List).length,

@@ -8,9 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_school_id, require_teacher
+from app.core.dependencies import get_current_user, get_school_id, require_teacher
 from app.models.modern import Incident
-from app.models.person import Child
+from app.models.person import Child, ChildGuardian
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 
@@ -52,6 +52,37 @@ class IncidentResponse(BaseModel):
 
 
 # ─── Endpoints ────────────────────────────────────────────────────────────────
+
+@router.get("/mine", response_model=List[IncidentResponse])
+async def list_parent_incidents(
+    skip: int = 0,
+    limit: int = 50,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Return incidents for children linked to the authenticated parent."""
+    guardian_id = getattr(current_user, "guardian_id", None)
+    if guardian_id is None:
+        raise HTTPException(status_code=403, detail="No guardian record linked")
+
+    child_ids_result = await db.execute(
+        select(ChildGuardian.child_id).where(ChildGuardian.guardian_id == guardian_id)
+    )
+    child_ids = [r[0] for r in child_ids_result.all()]
+    if not child_ids:
+        return []
+
+    query = (
+        select(Incident)
+        .where(Incident.school_id == school_id, Incident.child_id.in_(child_ids))
+        .order_by(Incident.incident_date.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    result = await db.execute(query)
+    return result.scalars().all()
+
 
 @router.get("", response_model=List[IncidentResponse])
 async def list_incidents(

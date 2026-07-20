@@ -68,10 +68,7 @@ class ChildEvaluation {
 final evaluationsProvider =
     FutureProvider.autoDispose<List<ChildEvaluation>>((ref) async {
   final api = ref.read(apiClientProvider);
-  final auth = ref.read(authProvider);
-  final data = auth.isParent
-      ? await api.get('/evaluations') as List
-      : await api.get('/evaluations') as List;
+  final data = await api.get('/evaluations') as List;
   return data
       .map((e) => ChildEvaluation.fromJson(e as Map<String, dynamic>))
       .toList();

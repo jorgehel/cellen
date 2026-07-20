@@ -240,6 +240,8 @@ class ParentInvoiceResponse(BaseModel):
     due_date: Optional[date] = None
     amount_paid: DecimalFloat = Decimal("0")
     balance: DecimalFloat = Decimal("0")
+    multicaixa_entity: Optional[str] = None
+    multicaixa_ref: Optional[str] = None
 
 
 # ─── Credit Notes ────────────────────────────────────────────────────────────

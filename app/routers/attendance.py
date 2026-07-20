@@ -15,7 +15,7 @@ from app.core.dependencies import (
     require_teacher,
 )
 from app.models.modern import Attendance, AttendanceLog
-from app.models.person import Child
+from app.models.person import Child, ChildGuardian
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
 
@@ -334,13 +334,27 @@ async def get_child_attendance_log(
     limit: int = 100,
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     child_result = await db.execute(
         select(Child).where(Child.id == child_id, Child.school_id == school_id)
     )
     if child_result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Child not found")
+
+    # Parents can only view their own children's logs
+    if getattr(current_user, "_role", None) == "parent":
+        guardian_id = getattr(current_user, "guardian_id", None)
+        if guardian_id is None:
+            raise HTTPException(status_code=403, detail="No guardian record linked")
+        link_result = await db.execute(
+            select(ChildGuardian).where(
+                ChildGuardian.guardian_id == guardian_id,
+                ChildGuardian.child_id == child_id,
+            )
+        )
+        if link_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=403, detail="Not your child")
 
     query = select(AttendanceLog).where(
         AttendanceLog.school_id == school_id,
@@ -362,13 +376,27 @@ async def get_child_attendance(
     limit: int = 50,
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     child_result = await db.execute(
         select(Child).where(Child.id == child_id, Child.school_id == school_id)
     )
     if child_result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Child not found")
+
+    # Parents can only view their own children's attendance
+    if getattr(current_user, "_role", None) == "parent":
+        guardian_id = getattr(current_user, "guardian_id", None)
+        if guardian_id is None:
+            raise HTTPException(status_code=403, detail="No guardian record linked")
+        link_result = await db.execute(
+            select(ChildGuardian).where(
+                ChildGuardian.guardian_id == guardian_id,
+                ChildGuardian.child_id == child_id,
+            )
+        )
+        if link_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=403, detail="Not your child")
 
     query = select(Attendance).where(
         Attendance.school_id == school_id, Attendance.child_id == child_id

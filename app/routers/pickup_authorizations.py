@@ -122,14 +122,30 @@ async def create_pickup_authorization(
     body: PickupAuthCreate,
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
-    from app.models.person import Child
+    from app.models.person import Child, ChildGuardian
+
     child_result = await db.execute(
         select(Child).where(Child.id == body.child_id, Child.school_id == school_id)
     )
     if child_result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Child not found")
+
+    # Parents can only create authorizations for their own children
+    role = getattr(current_user, "_role", None)
+    if role not in ("school_admin", "platform_admin"):
+        guardian_id = getattr(current_user, "guardian_id", None)
+        if not guardian_id:
+            raise HTTPException(status_code=403, detail="No guardian record linked")
+        link_result = await db.execute(
+            select(ChildGuardian).where(
+                ChildGuardian.guardian_id == guardian_id,
+                ChildGuardian.child_id == body.child_id,
+            )
+        )
+        if link_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=403, detail="Not your child")
 
     auth = PickupAuthorization(school_id=school_id, **body.model_dump())
     db.add(auth)
@@ -148,8 +164,10 @@ async def update_pickup_authorization(
     body: PickupAuthUpdate,
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
+    from app.models.person import ChildGuardian
+
     result = await db.execute(
         select(PickupAuthorization).where(
             PickupAuthorization.id == auth_id,
@@ -159,6 +177,22 @@ async def update_pickup_authorization(
     auth = result.scalar_one_or_none()
     if auth is None:
         raise HTTPException(status_code=404, detail="Not found")
+
+    # Parents can only update authorizations for their own children
+    role = getattr(current_user, "_role", None)
+    if role not in ("school_admin", "platform_admin"):
+        guardian_id = getattr(current_user, "guardian_id", None)
+        if not guardian_id:
+            raise HTTPException(status_code=403, detail="No guardian record linked")
+        link_result = await db.execute(
+            select(ChildGuardian).where(
+                ChildGuardian.guardian_id == guardian_id,
+                ChildGuardian.child_id == auth.child_id,
+            )
+        )
+        if link_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=403, detail="Not your child")
+
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(auth, field, value)
     await db.commit()
@@ -171,8 +205,10 @@ async def delete_pickup_authorization(
     auth_id: uuid.UUID,
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
+    from app.models.person import ChildGuardian
+
     result = await db.execute(
         select(PickupAuthorization).where(
             PickupAuthorization.id == auth_id,
@@ -182,6 +218,22 @@ async def delete_pickup_authorization(
     auth = result.scalar_one_or_none()
     if auth is None:
         raise HTTPException(status_code=404, detail="Not found")
+
+    # Parents can only delete authorizations for their own children
+    role = getattr(current_user, "_role", None)
+    if role not in ("school_admin", "platform_admin"):
+        guardian_id = getattr(current_user, "guardian_id", None)
+        if not guardian_id:
+            raise HTTPException(status_code=403, detail="No guardian record linked")
+        link_result = await db.execute(
+            select(ChildGuardian).where(
+                ChildGuardian.guardian_id == guardian_id,
+                ChildGuardian.child_id == auth.child_id,
+            )
+        )
+        if link_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=403, detail="Not your child")
+
     await db.delete(auth)
     await db.commit()
     return {"message": "Deleted"}
