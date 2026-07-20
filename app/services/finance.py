@@ -365,31 +365,6 @@ class PaymentIntakeService:
             if existing_payment:
                 return existing_payment
 
-        # Validate cash session requirement
-        if payment_method in ("cash", "check"):
-            if cash_session_id:
-                session_result = await self.db.execute(
-                    select(CashSession).where(
-                        CashSession.id == cash_session_id,
-                        CashSession.school_id == self.school_id,
-                        CashSession.status == "open",
-                    )
-                )
-                if session_result.scalar_one_or_none() is None:
-                    raise ValueError("Cash/check payments require an open cash session")
-            # If no session provided, check if there's one open
-            else:
-                open_session = await self.db.execute(
-                    select(CashSession).where(
-                        CashSession.school_id == self.school_id,
-                        CashSession.status == "open",
-                    )
-                )
-                session = open_session.scalar_one_or_none()
-                if session is None:
-                    raise ValueError("No open cash session — cash/check payments require one")
-                cash_session_id = session.id
-
         # Create payment
         payment = Payment(
             school_id=self.school_id,

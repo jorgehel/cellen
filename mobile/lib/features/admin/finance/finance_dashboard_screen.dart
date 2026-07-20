@@ -230,16 +230,6 @@ final _schoolYearsProvider = FutureProvider.autoDispose<List<Map<String, dynamic
   return data.map((e) => e as Map<String, dynamic>).toList();
 });
 
-final _openSessionProvider = FutureProvider.autoDispose<Map<String, dynamic>?>((ref) async {
-  final api = ref.read(apiClientProvider);
-  try {
-    final data = await api.get('/finance/cash-sessions', queryParameters: {'status': 'open', 'limit': '1'}) as List;
-    if (data.isNotEmpty) return data.first as Map<String, dynamic>;
-    return null;
-  } catch (_) {
-    return null;
-  }
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Screen
@@ -367,7 +357,6 @@ class _OverviewTab extends ConsumerWidget {
         ref.invalidate(_summaryProvider);
         ref.invalidate(_allInvoicesProvider);
         ref.invalidate(_pendingProofsProvider);
-        ref.invalidate(_openSessionProvider);
       },
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
@@ -387,64 +376,6 @@ class _OverviewTab extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 12),
-
-          // Open cash session indicator (spec 20.19.1)
-          ref.watch(_openSessionProvider).when(
-            loading: () => const SizedBox.shrink(),
-            error: (_, __) => const SizedBox.shrink(),
-            data: (session) {
-              if (session == null) {
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.point_of_sale_outlined, color: Colors.orange, size: 16),
-                      const SizedBox(width: 8),
-                      const Expanded(child: Text('Caixa fechada', style: TextStyle(color: Colors.orange, fontSize: 12, fontWeight: FontWeight.w600))),
-                      TextButton(
-                        onPressed: () => context.go('/admin/finance/cash-sessions'),
-                        style: TextButton.styleFrom(visualDensity: VisualDensity.compact, padding: EdgeInsets.zero),
-                        child: const Text('Abrir', style: TextStyle(fontSize: 12)),
-                      ),
-                    ],
-                  ),
-                );
-              }
-              final float = (session['opening_float'] as num?)?.toDouble() ?? 0;
-              return Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: AppTheme.success.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppTheme.success.withOpacity(0.3)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.point_of_sale_outlined, color: AppTheme.success, size: 16),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Caixa aberta · float ${currency.format(float)}',
-                        style: const TextStyle(color: AppTheme.success, fontSize: 12, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () => context.go('/admin/finance/cash-sessions'),
-                      style: TextButton.styleFrom(visualDensity: VisualDensity.compact, padding: EdgeInsets.zero),
-                      child: const Text('Fechar', style: TextStyle(fontSize: 12)),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
 
           // KPI cards
           summaryAsync.when(
@@ -593,8 +524,7 @@ class _OverviewTab extends ConsumerWidget {
               _QuickChip(icon: Icons.credit_score_outlined, label: 'Notas de Crédito', onTap: () => context.go('/admin/finance/credit-notes')),
               _QuickChip(icon: Icons.warning_amber_outlined, label: 'Devedores', onTap: () => context.go('/admin/finance/delinquent')),
               _QuickChip(icon: Icons.download_outlined, label: 'SAF-T AO', onTap: () => context.go('/admin/finance/saft')),
-              _QuickChip(icon: Icons.point_of_sale_outlined, label: 'Fecho de Caixa', onTap: () => context.go('/admin/finance/cash-sessions')),
-              _QuickChip(icon: Icons.savings_outlined, label: 'Créditos', onTap: () => context.go('/admin/finance/credits')),
+_QuickChip(icon: Icons.savings_outlined, label: 'Créditos', onTap: () => context.go('/admin/finance/credits')),
               _QuickChip(icon: Icons.event_repeat_outlined, label: 'Planos de Pagamento', onTap: () => context.go('/admin/finance/payment-plans')),
               _QuickChip(icon: Icons.notifications_outlined, label: 'Lembretes', onTap: () => context.go('/admin/finance/reminders')),
               _QuickChip(icon: Icons.receipt_long_outlined, label: 'Extrato de Conta', onTap: () => context.go('/admin/finance/statement')),
@@ -1316,6 +1246,10 @@ class _PendingProofCardState extends ConsumerState<_PendingProofCard> {
     final dateStr = p['payment_date'] as String? ?? '';
     final proofUrl = p['receipt_proof_url'] as String?;
     final notes = p['notes'] as String?;
+    final guardianName = p['guardian_name'] as String?;
+    final invoiceRef = (p['allocated_invoices'] as List?)?.isNotEmpty == true
+        ? (p['allocated_invoices'] as List).first['invoice_id'] as String?
+        : null;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1343,9 +1277,11 @@ class _PendingProofCardState extends ConsumerState<_PendingProofCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (guardianName != null)
+                      Text(guardianName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppTheme.textPrimary)),
                     Text(
                       widget.currency.format(amount),
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppTheme.textPrimary),
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: AppTheme.textPrimary),
                     ),
                     Text(
                       '${_methodLabel(method)} · $dateStr',
@@ -1402,11 +1338,12 @@ class _PendingProofCardState extends ConsumerState<_PendingProofCard> {
   }
 
   String _methodLabel(String m) => switch (m) {
-        'multicaixa' => 'Multicaixa',
-        'transfer' => 'Transferência',
+        'multicaixa_ref' || 'multicaixa' => 'Multicaixa / ATM',
+        'multicaixa_express' => 'Multicaixa Express',
+        'bank_transfer' || 'transfer' => 'Transferência Bancária',
         'cash' => 'Numerário',
-        'card' => 'Cartão',
         'check' => 'Cheque',
+        'credit' => 'Crédito',
         _ => m,
       };
 }

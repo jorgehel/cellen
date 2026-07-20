@@ -246,6 +246,7 @@ class ParentInvoiceResponse(BaseModel):
     balance: DecimalFloat = Decimal("0")
     multicaixa_entity: Optional[str] = None
     multicaixa_ref: Optional[str] = None
+    payment_proofs: Optional[List[dict]] = None
 
 
 # ─── Credit Notes ────────────────────────────────────────────────────────────
@@ -306,6 +307,7 @@ class PaymentResponse(BaseModel):
     payment_reference_id: Optional[uuid.UUID] = None
     created_at: datetime
     allocated_invoices: List[dict] = []
+    guardian_name: Optional[str] = None
 
 
 # ─── Payment References (20.11) ──────────────────────────────────────────────

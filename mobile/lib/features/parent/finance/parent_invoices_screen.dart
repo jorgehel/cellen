@@ -23,6 +23,7 @@ class ParentInvoice {
   final double amountPaid;
   final double balance;
   final String? proofStatus; // pending_review | approved | rejected | null
+  final String? rejectionReason;
 
   const ParentInvoice({
     required this.id,
@@ -37,14 +38,23 @@ class ParentInvoice {
     required this.amountPaid,
     required this.balance,
     this.proofStatus,
+    this.rejectionReason,
   });
 
   factory ParentInvoice.fromJson(Map<String, dynamic> json) {
-    // Extract proof status from the first payment proof if present
+    // Extract proof status and rejection reason from the most recent proof
     final proofs = json['payment_proofs'] as List?;
     String? proofStatus;
+    String? rejectionReason;
     if (proofs != null && proofs.isNotEmpty) {
-      proofStatus = (proofs.last as Map<String, dynamic>)['status'] as String?;
+      final lastProof = proofs.last as Map<String, dynamic>;
+      proofStatus = lastProof['status'] as String?;
+      if (proofStatus == 'rejected') {
+        final notes = lastProof['notes'] as String? ?? '';
+        rejectionReason = notes.startsWith('[REJEITADO] ')
+            ? notes.substring('[REJEITADO] '.length)
+            : notes.isNotEmpty ? notes : null;
+      }
     }
     return ParentInvoice(
       id: json['id']?.toString() ?? '',
@@ -64,6 +74,7 @@ class ParentInvoice {
       amountPaid: (json['amount_paid'] as num?)?.toDouble() ?? 0.0,
       balance: (json['balance'] as num?)?.toDouble() ?? 0.0,
       proofStatus: proofStatus,
+      rejectionReason: rejectionReason,
     );
   }
 
@@ -127,7 +138,7 @@ final _parentPaymentRefsProvider = FutureProvider.autoDispose<List<Map<String, d
 
 final _parentReceiptsProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   final api = ref.read(apiClientProvider);
-  final data = await api.get('/finance/receipts') as List;
+  final data = await api.get('/finance/parent/receipts') as List;
   return data.cast<Map<String, dynamic>>();
 });
 
@@ -418,7 +429,7 @@ class _CreditBalanceBanner extends ConsumerWidget {
       loading: () => const SizedBox.shrink(),
       error: (_, __) => const SizedBox.shrink(),
       data: (data) {
-        final balance = (data['credit_balance'] as num?)?.toDouble() ?? 0;
+        final balance = (data['balance'] as num?)?.toDouble() ?? 0;
         if (balance <= 0) return const SizedBox.shrink();
         return Container(
           margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
@@ -784,7 +795,7 @@ class _InvoiceCard extends ConsumerWidget {
             // Proof status indicator
             if (invoice.proofStatus != null) ...[
               const SizedBox(height: 12),
-              _ProofStatusBanner(status: invoice.proofStatus!),
+              _ProofStatusBanner(status: invoice.proofStatus!, rejectionReason: invoice.rejectionReason),
             ],
 
             // Submit payment button
@@ -822,7 +833,8 @@ class _InvoiceCard extends ConsumerWidget {
 // ---------------------------------------------------------------------------
 class _ProofStatusBanner extends StatelessWidget {
   final String status;
-  const _ProofStatusBanner({required this.status});
+  final String? rejectionReason;
+  const _ProofStatusBanner({required this.status, this.rejectionReason});
 
   @override
   Widget build(BuildContext context) {
@@ -839,11 +851,23 @@ class _ProofStatusBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: color.withOpacity(0.3)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: color, size: 18),
-          const SizedBox(width: 8),
-          Expanded(child: Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600))),
+          Row(
+            children: [
+              Icon(icon, color: color, size: 18),
+              const SizedBox(width: 8),
+              Expanded(child: Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600))),
+            ],
+          ),
+          if (status == 'rejected' && rejectionReason != null && rejectionReason!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.only(left: 26),
+              child: Text('Motivo: $rejectionReason', style: TextStyle(color: color, fontSize: 11)),
+            ),
+          ],
         ],
       ),
     );
@@ -873,15 +897,15 @@ class _SubmitPaymentDialogState extends ConsumerState<_SubmitPaymentDialog> {
   final _amountCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
   PlatformFile? _proofFile;
-  String _paymentMethod = 'multicaixa';
+  String _paymentMethod = 'multicaixa_ref';
   bool _isLoading = false;
   String? _error;
 
   static const _paymentMethods = {
-    'multicaixa': 'Multicaixa / ATM',
-    'transferencia': 'Transferência Bancária',
-    'numerario': 'Numerário',
-    'outro': 'Outro',
+    'multicaixa_ref': 'Multicaixa / ATM',
+    'bank_transfer': 'Transferência Bancária',
+    'multicaixa_express': 'Multicaixa Express',
+    'other': 'Outro',
   };
 
   @override

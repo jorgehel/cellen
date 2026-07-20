@@ -263,10 +263,32 @@ class _InstallmentRowState extends ConsumerState<_InstallmentRow> {
   }
 
   Future<void> _markMet(BuildContext context) async {
+    // Ask for payment method before recording
+    String method = 'bank_transfer';
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (_) => SimpleDialog(
+        title: const Text('Método de Pagamento'),
+        children: [
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, 'bank_transfer'), child: const Text('Transferência Bancária')),
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, 'cash'),          child: const Text('Numerário')),
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, 'multicaixa_ref'), child: const Text('Multicaixa / ATM')),
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, 'multicaixa_express'), child: const Text('Multicaixa Express')),
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, 'check'),         child: const Text('Cheque')),
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, 'other'),         child: const Text('Outro')),
+        ],
+      ),
+    );
+    if (picked == null) return;
+    method = picked;
+
     setState(() => _marking = true);
     try {
       final api = ref.read(apiClientProvider);
-      await api.post('/finance/payment-plans/${widget.planId}/installments/${widget.inst['id']}/mark-met');
+      await api.post(
+        '/finance/payment-plans/${widget.planId}/installments/${widget.inst['id']}/mark-met',
+        data: {'payment_method': method},
+      );
       widget.onChanged();
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro: $e'), backgroundColor: AppTheme.danger));

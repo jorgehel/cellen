@@ -961,6 +961,16 @@ async def list_payments(
     result = await db.execute(query.order_by(Payment.created_at.desc()).offset(skip).limit(limit))
     payments = result.scalars().all()
 
+    # Bulk-fetch guardian names for all payments
+    guardian_ids = list({p.billing_guardian_id for p in payments if p.billing_guardian_id})
+    guardian_name_map: dict = {}
+    if guardian_ids:
+        g_r = await db.execute(
+            select(Guardian.id, Guardian.first_name, Guardian.last_name)
+            .where(Guardian.id.in_(guardian_ids))
+        )
+        guardian_name_map = {row[0]: f"{row[1]} {row[2]}" for row in g_r.all()}
+
     output = []
     for p in payments:
         alloc_r = await db.execute(
@@ -972,6 +982,7 @@ async def list_payments(
             {"invoice_id": str(a.invoice_id), "amount_applied": float(a.amount_applied)}
             for a in allocs
         ]
+        data.guardian_name = guardian_name_map.get(p.billing_guardian_id)
         output.append(data)
     return output
 
@@ -1047,7 +1058,7 @@ async def approve_payment(
     db: AsyncSession = Depends(get_db),
     _=Depends(require_finance_access),
 ):
-    """Approve a parent-submitted payment proof: status -> normal, recalculate invoices."""
+    """Approve a parent-submitted payment proof: status -> normal, handle surplus, emit RC."""
     result = await db.execute(
         select(Payment).where(Payment.id == payment_id, Payment.school_id == school_id)
     )
@@ -1057,26 +1068,68 @@ async def approve_payment(
     if payment.status != "pending_review":
         raise HTTPException(status_code=400, detail="Payment is not pending review")
 
-    payment.status = "normal"
-    await db.flush()
-
-    # Recalculate all invoices linked to this payment
+    # Load allocations and cap each to the real invoice balance (computed before approval)
     alloc_result = await db.execute(
         select(PaymentAllocation).where(PaymentAllocation.payment_id == payment_id)
     )
-    for alloc in alloc_result.scalars().all():
+    allocs = alloc_result.scalars().all()
+
+    total_actually_applied = Decimal("0")
+    rc_allocation_data = []
+    for alloc in allocs:
+        real_balance = await get_invoice_balance(db, alloc.invoice_id)
+        capped = min(alloc.amount_applied, real_balance)
+        if capped < alloc.amount_applied:
+            alloc.amount_applied = capped
+        if capped > 0:
+            total_actually_applied += capped
+            inv_r = await db.execute(select(Invoice).where(Invoice.id == alloc.invoice_id))
+            inv = inv_r.scalar_one_or_none()
+            rc_allocation_data.append({
+                "invoice_id": alloc.invoice_id,
+                "document_number": inv.full_document_number if inv else None,
+                "amount_applied": capped,
+            })
+
+    # Activate payment
+    payment.status = "normal"
+    await db.flush()
+
+    # Recalculate invoice statuses
+    for alloc in allocs:
         await recalculate_invoice_status(db, alloc.invoice_id)
+
+    # Handle surplus → CreditEntry
+    surplus = payment.amount - total_actually_applied
+    if surplus > 0 and payment.billing_guardian_id:
+        credit = CreditEntry(
+            school_id=school_id,
+            billing_guardian_id=payment.billing_guardian_id,
+            source="payment_surplus",
+            source_payment_id=payment.id,
+            amount=surplus,
+            amount_remaining=surplus,
+            notes=f"Excedente do comprovativo aprovado (pagamento {payment.id})",
+        )
+        db.add(credit)
+
+    # Emit RC
+    if rc_allocation_data:
+        emission = DocumentEmissionService(db, school_id)
+        await emission.emit_receipt(
+            payment, rc_allocation_data,
+            issued_by=payment.received_by,
+        )
 
     await db.commit()
     await db.refresh(payment)
-    alloc_r = await db.execute(
+    alloc_r2 = await db.execute(
         select(PaymentAllocation).where(PaymentAllocation.payment_id == payment.id)
     )
-    allocs = alloc_r.scalars().all()
     data = PaymentResponse.model_validate(payment)
     data.allocated_invoices = [
         {"invoice_id": str(a.invoice_id), "amount_applied": float(a.amount_applied)}
-        for a in allocs
+        for a in alloc_r2.scalars().all()
     ]
     return data
 
@@ -1377,159 +1430,6 @@ async def refund_credit(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CASH SESSIONS (20.14)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@router.get("/cash-sessions", response_model=list[CashSessionResponse])
-async def list_cash_sessions(
-    school_id: uuid.UUID = Depends(get_school_id),
-    db: AsyncSession = Depends(get_db),
-    _=Depends(require_finance_access),
-):
-    result = await db.execute(
-        select(CashSession).where(CashSession.school_id == school_id)
-        .order_by(CashSession.opened_at.desc()).limit(50)
-    )
-    return result.scalars().all()
-
-
-@router.post("/cash-sessions/open", response_model=CashSessionResponse, status_code=201)
-async def open_cash_session(
-    body: CashSessionOpen,
-    school_id: uuid.UUID = Depends(get_school_id),
-    db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_finance_access),
-):
-    # Check no open session exists
-    existing = await db.execute(
-        select(CashSession).where(CashSession.school_id == school_id, CashSession.status == "open")
-    )
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="A cash session is already open")
-
-    session = CashSession(
-        school_id=school_id,
-        opened_by=getattr(current_user, "employee_id", current_user.id),
-        opened_at=now_luanda(),
-        opening_float=body.opening_float,
-    )
-    db.add(session)
-    await db.commit()
-    await db.refresh(session)
-    return session
-
-
-@router.post("/cash-sessions/{session_id}/close", response_model=CashSessionResponse)
-async def close_cash_session(
-    session_id: uuid.UUID,
-    body: CashSessionClose,
-    school_id: uuid.UUID = Depends(get_school_id),
-    db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_finance_access),
-):
-    result = await db.execute(
-        select(CashSession).where(CashSession.id == session_id, CashSession.school_id == school_id)
-    )
-    session = result.scalar_one_or_none()
-    if session is None:
-        raise HTTPException(status_code=404, detail="Cash session not found")
-    if session.status == "closed":
-        raise HTTPException(status_code=400, detail="Session already closed")
-
-    # Calculate expected amounts from payments in this session
-    pay_result = await db.execute(
-        select(Payment.payment_method, func.sum(Payment.amount))
-        .where(Payment.cash_session_id == session_id, Payment.status == "normal")
-        .group_by(Payment.payment_method)
-    )
-    expected = {row[0]: float(row[1]) for row in pay_result.all()}
-
-    # Compute variance
-    counted_total = sum(body.counted_by_method.values())
-    expected_total = sum(expected.values()) + float(session.opening_float)
-    variance = Decimal(str(counted_total)) - Decimal(str(expected_total))
-
-    session.closed_by = getattr(current_user, "employee_id", current_user.id)
-    session.closed_at = now_luanda()
-    session.expected_by_method = expected
-    session.counted_by_method = body.counted_by_method
-    session.variance = variance
-    session.variance_reason = body.variance_reason
-    session.status = "closed"
-
-    if variance != 0:
-        audit = FinanceAuditEntry(
-            school_id=school_id,
-            actor_id=getattr(current_user, "id", uuid.uuid4()),
-            entity_type="cash_session",
-            entity_id=session_id,
-            action="close_with_variance",
-            reason=body.variance_reason,
-            after_snapshot={
-                "variance": float(variance),
-                "counted": body.counted_by_method,
-                "expected": expected,
-            },
-        )
-        db.add(audit)
-
-    await db.commit()
-    await db.refresh(session)
-    return session
-
-
-@router.post("/cash-sessions/{session_id}/reopen", response_model=CashSessionResponse)
-async def reopen_cash_session(
-    session_id: uuid.UUID,
-    body: dict,
-    school_id: uuid.UUID = Depends(get_school_id),
-    db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_school_admin),
-):
-    """Reopen a closed cash session (UC-CS5). school_admin only; mandatory reason."""
-    reason = body.get("reason", "").strip()
-    if not reason:
-        raise HTTPException(status_code=422, detail="reason is required to reopen a cash session")
-
-    result = await db.execute(
-        select(CashSession).where(CashSession.id == session_id, CashSession.school_id == school_id)
-    )
-    session = result.scalar_one_or_none()
-    if session is None:
-        raise HTTPException(status_code=404, detail="Cash session not found")
-    if session.status == "open":
-        raise HTTPException(status_code=400, detail="Session is already open")
-
-    # Ensure no other session is currently open
-    other = await db.execute(
-        select(CashSession.id).where(
-            CashSession.school_id == school_id,
-            CashSession.status == "open",
-            CashSession.id != session_id,
-        )
-    )
-    if other.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="Another cash session is already open")
-
-    session.status = "open"
-    session.closed_at = None
-    session.closed_by = None
-
-    audit = FinanceAuditEntry(
-        school_id=school_id,
-        actor_id=getattr(current_user, "id", uuid.uuid4()),
-        entity_type="cash_session",
-        entity_id=session_id,
-        action="reopen",
-        reason=reason,
-    )
-    db.add(audit)
-    await db.commit()
-    await db.refresh(session)
-    return session
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # PAYMENT PLANS (20.15)
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1643,9 +1543,10 @@ async def update_payment_plan(
 async def mark_installment_met(
     plan_id: uuid.UUID,
     installment_id: uuid.UUID,
+    body: dict = {},
     school_id: uuid.UUID = Depends(get_school_id),
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_finance_access),
+    current_user=Depends(require_finance_access),
 ):
     plan_r = await db.execute(
         select(PaymentPlan).where(PaymentPlan.id == plan_id, PaymentPlan.school_id == school_id)
@@ -1662,8 +1563,30 @@ async def mark_installment_met(
     inst = inst_r.scalar_one_or_none()
     if not inst:
         raise HTTPException(status_code=404, detail="Installment not found")
+    if inst.status == "met":
+        raise HTTPException(status_code=400, detail="Installment already marked as met")
+
+    # Record the actual payment so invoice balances update and an RC is emitted
+    payment_method = body.get("payment_method", "bank_transfer")
+    payment_date = body.get("payment_date") or str(today_luanda())
+    target_invoice_ids = [uuid.UUID(inv_id) for inv_id in (plan.invoice_ids or [])]
+    intake = PaymentIntakeService(db, school_id)
+    try:
+        await intake.intake(
+            billing_guardian_id=plan.billing_guardian_id,
+            amount=inst.amount,
+            payment_method=payment_method,
+            payment_date=today_luanda() if not body.get("payment_date") else date.fromisoformat(payment_date),
+            target_invoice_ids=target_invoice_ids or None,
+            received_by=getattr(current_user, "employee_id", None),
+            notes=f"Plano de pagamento — prestação {inst.due_date}",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     inst.status = "met"
     inst.paid_at = today_luanda()
+
     # Check if all installments are met → mark plan completed
     all_r = await db.execute(
         select(PaymentPlanInstallment).where(PaymentPlanInstallment.plan_id == plan_id)
@@ -1772,6 +1695,26 @@ async def list_parent_invoices(
         )
         child_name_map = {row[0]: f"{row[1]} {row[2]}" for row in cn_r.all()}
 
+    # Bulk-fetch payment proofs (pending_review / rejected) for all invoices
+    proof_map: dict[uuid.UUID, list] = {}
+    if invoice_ids:
+        proof_r = await db.execute(
+            select(Payment, PaymentAllocation.invoice_id)
+            .join(PaymentAllocation, PaymentAllocation.payment_id == Payment.id)
+            .where(
+                PaymentAllocation.invoice_id.in_(invoice_ids),
+                Payment.status.in_(["pending_review", "rejected"]),
+            )
+            .order_by(Payment.created_at.desc())
+        )
+        for payment, inv_id in proof_r.all():
+            proof_map.setdefault(inv_id, []).append({
+                "status": payment.status,
+                "payment_id": str(payment.id),
+                "amount": float(payment.amount),
+                "notes": payment.notes,
+            })
+
     output = []
     for inv in invoices:
         amount_paid = await get_invoice_amount_paid(db, inv.id)
@@ -1792,6 +1735,7 @@ async def list_parent_invoices(
             balance=balance,
             multicaixa_entity=ref.entity if ref else None,
             multicaixa_ref=ref.reference if ref else None,
+            payment_proofs=proof_map.get(inv.id),
         ))
     return output
 
@@ -1855,6 +1799,28 @@ async def parent_payment_references(
     return result.scalars().all()
 
 
+@router.get("/parent/receipts", response_model=list[ReceiptResponse])
+async def parent_receipts(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_parent),
+):
+    """Parent views their receipts (RC documents)."""
+    guardian_id = getattr(current_user, "guardian_id", None)
+    if guardian_id is None:
+        raise HTTPException(status_code=403, detail="No guardian linked")
+    result = await db.execute(
+        select(Receipt)
+        .join(Payment, Payment.id == Receipt.payment_id)
+        .where(
+            Receipt.school_id == Payment.school_id,
+            Payment.billing_guardian_id == guardian_id,
+        )
+        .order_by(Receipt.system_entry_date.desc())
+        .limit(50)
+    )
+    return result.scalars().all()
+
+
 @router.post("/parent/submit-payment", status_code=201)
 async def parent_submit_payment(
     body: dict,
@@ -1891,6 +1857,19 @@ async def parent_submit_payment(
         linked_child_ids = [str(r[0]) for r in child_ids_r.all()]
         if not invoice.child_id or str(invoice.child_id) not in linked_child_ids:
             raise HTTPException(status_code=403, detail="Not your invoice")
+
+    # Block duplicate pending_review submissions for the same invoice
+    existing_pending = await db.execute(
+        select(Payment.id)
+        .join(PaymentAllocation, PaymentAllocation.payment_id == Payment.id)
+        .where(
+            PaymentAllocation.invoice_id == invoice.id,
+            Payment.billing_guardian_id == guardian_id,
+            Payment.status == "pending_review",
+        )
+    )
+    if existing_pending.scalar_one_or_none() is not None:
+        raise HTTPException(status_code=409, detail="Já existe um comprovativo em análise para esta factura")
 
     # Create a pending-review payment
     amount = Decimal(str(body.get("amount", invoice.gross_total)))
@@ -1976,11 +1955,6 @@ async def finance_dashboard(
         .where(CreditEntry.school_id == school_id, CreditEntry.is_reversed == False)
     )
 
-    # Open cash session
-    session_r = await db.execute(
-        select(CashSession.id).where(CashSession.school_id == school_id, CashSession.status == "open")
-    )
-
     # Invoices generated this month (count and amount)
     inv_gen_r = await db.execute(
         select(func.count(Invoice.id), func.coalesce(func.sum(Invoice.gross_total), 0))
@@ -2005,7 +1979,6 @@ async def finance_dashboard(
         "overdue_invoices_count": overdue_r.scalar(),
         "total_outstanding": float(outstanding_r.scalar()),
         "total_credit_balance": float(credit_r.scalar()),
-        "has_open_cash_session": session_r.scalar_one_or_none() is not None,
         "invoices_generated_count": invoices_generated_count,
         "invoices_generated_amount": invoices_generated_amount,
         "collection_rate": collection_rate,

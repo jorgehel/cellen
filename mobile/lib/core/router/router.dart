@@ -54,7 +54,6 @@ import '../../features/finance/credit_notes_screen.dart';
 import '../../features/finance/saft_screen.dart';
 import '../../features/finance/delinquent_screen.dart';
 import '../../features/admin/finance/billing_items_screen.dart';
-import '../../features/admin/finance/cash_sessions_screen.dart';
 import '../../features/admin/finance/credit_balances_screen.dart';
 import '../../features/admin/finance/payment_plans_screen.dart';
 import '../../features/admin/finance/reminders_screen.dart';
@@ -464,7 +463,6 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/admin/finance/saft',               builder: (_, __) => const SaftScreen()),
           GoRoute(path: '/admin/finance/delinquent',         builder: (_, __) => const DelinquentScreen()),
           GoRoute(path: '/admin/finance/billing-items',      builder: (_, __) => const BillingItemsScreen()),
-          GoRoute(path: '/admin/finance/cash-sessions',      builder: (_, __) => const CashSessionsScreen()),
           GoRoute(path: '/admin/finance/credits',            builder: (_, __) => const CreditBalancesScreen()),
           GoRoute(path: '/admin/finance/payment-plans',      builder: (_, __) => const PaymentPlansScreen()),
           GoRoute(path: '/admin/finance/reminders',          builder: (_, __) => const RemindersScreen()),
