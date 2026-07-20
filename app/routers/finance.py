@@ -45,7 +45,7 @@ from app.schemas.finance import (
     ExpenseCategoryCreate, ExpenseCategoryResponse, ExpenseCategoryUpdate,
     ExpenseCreate, ExpenseResponse, ExpenseUpdate,
     InvoiceBulkCreate, InvoiceCreate, InvoiceResponse, OutstandingInvoice,
-    ParentInvoiceResponse, PaymentCreate, PaymentPlanCreate, PaymentPlanResponse,
+    ParentInvoiceResponse, PaymentCreate, PaymentPlanCreate, PaymentPlanResponse, PaymentPlanUpdate,
     PaymentReferenceCreate, PaymentReferenceMarkPaid, PaymentReferenceResponse,
     PaymentResponse, ReceiptResponse, ReminderCreate, ReminderResponse,
 )
@@ -460,7 +460,7 @@ async def terminate_contract(
 # INVOICES (FT / FR / ND)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def _enrich_invoice(db: AsyncSession, invoice: Invoice) -> dict:
+async def _enrich_invoice(db: AsyncSession, invoice: Invoice, include_related: bool = False) -> dict:
     """Add computed fields to invoice response."""
     amount_paid = await get_invoice_amount_paid(db, invoice.id)
     balance = await get_invoice_balance(db, invoice.id)
@@ -478,6 +478,48 @@ async def _enrich_invoice(db: AsyncSession, invoice: Invoice) -> dict:
         row = cr.first()
         if row:
             child_name = f"{row[0]} {row[1]}"
+
+    # Load related documents for detail view
+    credit_notes_data = None
+    receipts_data = None
+    payment_allocations_data = None
+    if include_related:
+        cn_r = await db.execute(select(CreditNote).where(CreditNote.invoice_id == invoice.id))
+        credit_notes_data = [
+            {"id": str(cn.id), "full_document_number": cn.full_document_number,
+             "invoice_date": str(cn.invoice_date), "gross_total": float(cn.gross_total)}
+            for cn in cn_r.scalars().all()
+        ]
+        alloc_r = await db.execute(
+            select(PaymentAllocation).where(PaymentAllocation.invoice_id == invoice.id)
+        )
+        allocs = alloc_r.scalars().all()
+        payment_allocations_data = []
+        receipts_data = []
+        seen_payments = set()
+        for alloc in allocs:
+            if alloc.payment_id in seen_payments:
+                continue
+            seen_payments.add(alloc.payment_id)
+            p_r = await db.execute(select(Payment).where(Payment.id == alloc.payment_id))
+            p = p_r.scalar_one_or_none()
+            if p:
+                payment_allocations_data.append({
+                    "id": str(p.id),
+                    "amount": float(alloc.amount_applied),
+                    "payment_date": str(p.payment_date) if p.payment_date else None,
+                    "payment_method": p.payment_method,
+                    "status": p.status or "normal",
+                })
+                rc_r = await db.execute(select(Receipt).where(Receipt.payment_id == p.id))
+                for rc in rc_r.scalars().all():
+                    receipts_data.append({
+                        "id": str(rc.id),
+                        "full_document_number": rc.full_document_number,
+                        "invoice_date": str(rc.invoice_date),
+                        "gross_total": float(rc.gross_total),
+                        "status": rc.status,
+                    })
 
     return InvoiceResponse(
         id=invoice.id,
@@ -510,6 +552,9 @@ async def _enrich_invoice(db: AsyncSession, invoice: Invoice) -> dict:
         balance=balance,
         child_name=child_name,
         signature_excerpt=signature_excerpt(invoice.hash_code) if invoice.hash_code else None,
+        credit_notes=credit_notes_data,
+        receipts=receipts_data,
+        payment_allocations=payment_allocations_data,
     )
 
 
@@ -661,7 +706,7 @@ async def get_invoice(
     invoice = result.scalar_one_or_none()
     if invoice is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    return await _enrich_invoice(db, invoice)
+    return await _enrich_invoice(db, invoice, include_related=True)
 
 
 @router.post("/invoices/bulk", status_code=201)
@@ -1557,6 +1602,77 @@ async def create_payment_plan(
     await db.commit()
     await db.refresh(plan)
     return PaymentPlanResponse.model_validate(plan)
+
+
+@router.patch("/payment-plans/{plan_id}", response_model=PaymentPlanResponse)
+async def update_payment_plan(
+    plan_id: uuid.UUID,
+    body: PaymentPlanUpdate,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_school_admin),
+):
+    result = await db.execute(
+        select(PaymentPlan).where(PaymentPlan.id == plan_id, PaymentPlan.school_id == school_id)
+    )
+    plan = result.scalar_one_or_none()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Payment plan not found")
+    if body.status is not None:
+        allowed = {"cancelled", "breached"}
+        if body.status not in allowed:
+            raise HTTPException(status_code=422, detail=f"Status must be one of {allowed}")
+        plan.status = body.status
+    if body.notes is not None:
+        plan.notes = body.notes
+    await db.commit()
+    await db.refresh(plan)
+    inst_r = await db.execute(
+        select(PaymentPlanInstallment).where(PaymentPlanInstallment.plan_id == plan.id)
+        .order_by(PaymentPlanInstallment.due_date)
+    )
+    data = PaymentPlanResponse.model_validate(plan)
+    data.installments = [
+        {"id": str(i.id), "due_date": str(i.due_date), "amount": float(i.amount), "status": i.status}
+        for i in inst_r.scalars().all()
+    ]
+    return data
+
+
+@router.post("/payment-plans/{plan_id}/installments/{installment_id}/mark-met")
+async def mark_installment_met(
+    plan_id: uuid.UUID,
+    installment_id: uuid.UUID,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_finance_access),
+):
+    plan_r = await db.execute(
+        select(PaymentPlan).where(PaymentPlan.id == plan_id, PaymentPlan.school_id == school_id)
+    )
+    plan = plan_r.scalar_one_or_none()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Payment plan not found")
+    inst_r = await db.execute(
+        select(PaymentPlanInstallment).where(
+            PaymentPlanInstallment.id == installment_id,
+            PaymentPlanInstallment.plan_id == plan_id,
+        )
+    )
+    inst = inst_r.scalar_one_or_none()
+    if not inst:
+        raise HTTPException(status_code=404, detail="Installment not found")
+    inst.status = "met"
+    inst.paid_at = today_luanda()
+    # Check if all installments are met → mark plan completed
+    all_r = await db.execute(
+        select(PaymentPlanInstallment).where(PaymentPlanInstallment.plan_id == plan_id)
+    )
+    all_insts = all_r.scalars().all()
+    if all(i.status == "met" or i.id == installment_id for i in all_insts):
+        plan.status = "completed"
+    await db.commit()
+    return {"ok": True}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

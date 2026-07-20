@@ -197,7 +197,8 @@ class _WideLayout extends StatelessWidget {
                     padding:
                         const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
                     children: items.map((item) {
-                      final selected = currentPath.startsWith(item.path);
+                      final selected = currentPath == item.path ||
+                          currentPath.startsWith('${item.path}/');
                       return Container(
                         margin: const EdgeInsets.only(bottom: 2),
                         child: ListTile(
@@ -417,12 +418,27 @@ class _NarrowLayout extends StatelessWidget {
     final overflowItems = items.skip(4).toList();
 
     // Determine which bottom-nav index is "active".
-    // If the current path matches an overflow item, highlight "Mais" (index 4).
-    final inOverflow =
-        overflowItems.any((i) => currentPath.startsWith(i.path));
+    // Use longest (most-specific) path match to avoid e.g. '/admin' matching '/admin/people'.
+    bool _pathMatches(String itemPath, String current) =>
+        current == itemPath || current.startsWith('$itemPath/');
+
+    int _bestMatch(List<SidebarItem> candidates) {
+      int bestIdx = -1;
+      int bestLen = -1;
+      for (int i = 0; i < candidates.length; i++) {
+        final p = candidates[i].path;
+        if (_pathMatches(p, currentPath) && p.length > bestLen) {
+          bestLen = p.length;
+          bestIdx = i;
+        }
+      }
+      return bestIdx;
+    }
+
+    final inOverflow = _bestMatch(overflowItems) >= 0;
     final navIndex = inOverflow
-        ? navItems.length // points to "Mais"
-        : navItems.indexWhere((i) => currentPath.startsWith(i.path));
+        ? navItems.length
+        : _bestMatch(navItems);
 
     final destinations = <NavigationDestination>[
       ...navItems.map((item) => NavigationDestination(
@@ -437,6 +453,19 @@ class _NarrowLayout extends StatelessWidget {
           label: 'Mais',
         ),
     ];
+
+    // NavigationBar requires >= 2 destinations; skip it if items aren't ready.
+    if (destinations.length < 2) {
+      return Scaffold(
+        backgroundColor: AppTheme.surface,
+        appBar: AppBar(
+          title: Text(title),
+          actions: actions,
+        ),
+        body: child,
+        floatingActionButton: floatingActionButton,
+      );
+    }
 
     return Scaffold(
       backgroundColor: AppTheme.surface,

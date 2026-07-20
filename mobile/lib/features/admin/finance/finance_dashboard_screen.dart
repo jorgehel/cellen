@@ -24,6 +24,10 @@ class FinanceSummary {
   final double outstanding;
   final int outstandingCount;
   final int overdueCount;
+  final double creditBalance;
+  final double collectionRate; // 0-100 %
+  final int invoicesThisMonth;
+  final double invoicedThisMonth;
 
   const FinanceSummary({
     required this.totalIncome,
@@ -32,6 +36,10 @@ class FinanceSummary {
     required this.outstanding,
     required this.outstandingCount,
     required this.overdueCount,
+    this.creditBalance = 0,
+    this.collectionRate = 0,
+    this.invoicesThisMonth = 0,
+    this.invoicedThisMonth = 0,
   });
 
   factory FinanceSummary.fromJson(Map<String, dynamic> json) {
@@ -39,6 +47,8 @@ class FinanceSummary {
     final expenses = (json['total_expenses_month'] as num?)?.toDouble() ?? 0.0;
     final pending = (json['pending_invoices_count'] as num?)?.toInt() ?? 0;
     final overdue = (json['overdue_invoices_count'] as num?)?.toInt() ?? 0;
+    final invoiced = (json['total_invoiced_month'] as num?)?.toDouble() ?? 0.0;
+    final collected = (json['total_collected_month'] as num?)?.toDouble() ?? income;
     return FinanceSummary(
       totalIncome: income,
       totalExpenses: expenses,
@@ -46,6 +56,10 @@ class FinanceSummary {
       outstanding: (json['total_outstanding'] as num?)?.toDouble() ?? 0.0,
       outstandingCount: pending + overdue,
       overdueCount: overdue,
+      creditBalance: (json['total_credit_balance'] as num?)?.toDouble() ?? 0.0,
+      collectionRate: invoiced > 0 ? (collected / invoiced * 100).clamp(0, 100) : 0,
+      invoicesThisMonth: (json['invoices_generated_month'] as num?)?.toInt() ?? 0,
+      invoicedThisMonth: invoiced,
     );
   }
 }
@@ -216,6 +230,17 @@ final _schoolYearsProvider = FutureProvider.autoDispose<List<Map<String, dynamic
   return data.map((e) => e as Map<String, dynamic>).toList();
 });
 
+final _openSessionProvider = FutureProvider.autoDispose<Map<String, dynamic>?>((ref) async {
+  final api = ref.read(apiClientProvider);
+  try {
+    final data = await api.get('/finance/cash-sessions', queryParameters: {'status': 'open', 'limit': '1'}) as List;
+    if (data.isNotEmpty) return data.first as Map<String, dynamic>;
+    return null;
+  } catch (_) {
+    return null;
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Screen
 // ─────────────────────────────────────────────────────────────────────────────
@@ -342,6 +367,7 @@ class _OverviewTab extends ConsumerWidget {
         ref.invalidate(_summaryProvider);
         ref.invalidate(_allInvoicesProvider);
         ref.invalidate(_pendingProofsProvider);
+        ref.invalidate(_openSessionProvider);
       },
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
@@ -361,6 +387,64 @@ class _OverviewTab extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 12),
+
+          // Open cash session indicator (spec 20.19.1)
+          ref.watch(_openSessionProvider).when(
+            loading: () => const SizedBox.shrink(),
+            error: (_, __) => const SizedBox.shrink(),
+            data: (session) {
+              if (session == null) {
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.point_of_sale_outlined, color: Colors.orange, size: 16),
+                      const SizedBox(width: 8),
+                      const Expanded(child: Text('Caixa fechada', style: TextStyle(color: Colors.orange, fontSize: 12, fontWeight: FontWeight.w600))),
+                      TextButton(
+                        onPressed: () => context.go('/admin/finance/cash-sessions'),
+                        style: TextButton.styleFrom(visualDensity: VisualDensity.compact, padding: EdgeInsets.zero),
+                        child: const Text('Abrir', style: TextStyle(fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              final float = (session['opening_float'] as num?)?.toDouble() ?? 0;
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppTheme.success.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppTheme.success.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.point_of_sale_outlined, color: AppTheme.success, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Caixa aberta · float ${currency.format(float)}',
+                        style: const TextStyle(color: AppTheme.success, fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => context.go('/admin/finance/cash-sessions'),
+                      style: TextButton.styleFrom(visualDensity: VisualDensity.compact, padding: EdgeInsets.zero),
+                      child: const Text('Fechar', style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
 
           // KPI cards
           summaryAsync.when(
@@ -412,6 +496,30 @@ class _OverviewTab extends ConsumerWidget {
                         color: s.overdueCount > 0 ? AppTheme.danger : Colors.orange,
                         badge: s.overdueCount > 0 ? '${s.overdueCount} em atraso' : null,
                         onTap: () => onNavigate(1),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _KpiCard(
+                        label: 'Créditos Guardados',
+                        value: currency.format(s.creditBalance),
+                        icon: Icons.savings_outlined,
+                        color: AppTheme.primary,
+                        onTap: () => context.go('/admin/finance/credits'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _KpiCard(
+                        label: 'Taxa de Cobrança',
+                        value: '${s.collectionRate.toStringAsFixed(1)}%',
+                        sublabel: s.invoicesThisMonth > 0 ? '${s.invoicesThisMonth} fact. emitidas' : null,
+                        icon: Icons.percent_outlined,
+                        color: s.collectionRate >= 80 ? AppTheme.success : s.collectionRate >= 50 ? Colors.orange : AppTheme.danger,
                       ),
                     ),
                   ],
@@ -485,6 +593,14 @@ class _OverviewTab extends ConsumerWidget {
               _QuickChip(icon: Icons.credit_score_outlined, label: 'Notas de Crédito', onTap: () => context.go('/admin/finance/credit-notes')),
               _QuickChip(icon: Icons.warning_amber_outlined, label: 'Devedores', onTap: () => context.go('/admin/finance/delinquent')),
               _QuickChip(icon: Icons.download_outlined, label: 'SAF-T AO', onTap: () => context.go('/admin/finance/saft')),
+              _QuickChip(icon: Icons.point_of_sale_outlined, label: 'Fecho de Caixa', onTap: () => context.go('/admin/finance/cash-sessions')),
+              _QuickChip(icon: Icons.savings_outlined, label: 'Créditos', onTap: () => context.go('/admin/finance/credits')),
+              _QuickChip(icon: Icons.event_repeat_outlined, label: 'Planos de Pagamento', onTap: () => context.go('/admin/finance/payment-plans')),
+              _QuickChip(icon: Icons.notifications_outlined, label: 'Lembretes', onTap: () => context.go('/admin/finance/reminders')),
+              _QuickChip(icon: Icons.receipt_long_outlined, label: 'Extrato de Conta', onTap: () => context.go('/admin/finance/statement')),
+              _QuickChip(icon: Icons.inventory_outlined, label: 'Itens Faturáveis', onTap: () => context.go('/admin/finance/billing-items')),
+              _QuickChip(icon: Icons.qr_code_outlined, label: 'Ref. Multicaixa', onTap: () => context.go('/admin/finance/payment-references')),
+              _QuickChip(icon: Icons.manage_search_outlined, label: 'Auditoria', onTap: () => context.go('/admin/finance/audit-log')),
             ],
           ),
 
@@ -545,6 +661,16 @@ class _OverviewTab extends ConsumerWidget {
                     builder: (_) => VoidInvoiceDialog(
                       invoiceId: inv.id,
                       onVoided: () {
+                        ref.invalidate(_allInvoicesProvider);
+                        ref.invalidate(_summaryProvider);
+                      },
+                    ),
+                  ),
+                  onPartialCreditNote: (inv) => showDialog(
+                    context: context,
+                    builder: (_) => _PartialCreditNoteDialog(
+                      invoice: inv,
+                      onCreated: () {
                         ref.invalidate(_allInvoicesProvider);
                         ref.invalidate(_summaryProvider);
                       },
@@ -691,6 +817,13 @@ class _InvoicesTabState extends ConsumerState<_InvoicesTab> {
                         builder: (_) => VoidInvoiceDialog(
                           invoiceId: inv.id,
                           onVoided: _refresh,
+                        ),
+                      ),
+                      onPartialCreditNote: (inv) => showDialog(
+                        context: ctx,
+                        builder: (_) => _PartialCreditNoteDialog(
+                          invoice: inv,
+                          onCreated: _refresh,
                         ),
                       ),
                     );
@@ -1382,12 +1515,13 @@ class _QuickChip extends StatelessWidget {
   }
 }
 
-class _InvoiceTile extends StatelessWidget {
+class _InvoiceTile extends ConsumerWidget {
   final Invoice invoice;
   final NumberFormat currency;
   final bool showDocNumber;
   final void Function(Invoice) onRecordPayment;
   final void Function(Invoice) onVoid;
+  final void Function(Invoice)? onPartialCreditNote;
 
   const _InvoiceTile({
     required this.invoice,
@@ -1395,13 +1529,15 @@ class _InvoiceTile extends StatelessWidget {
     this.showDocNumber = false,
     required this.onRecordPayment,
     required this.onVoid,
+    this.onPartialCreditNote,
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final inv = invoice;
+    final isAdmin = ref.watch(authProvider).isAdmin;
     final canPay = inv.status != 'paid' && inv.status != 'cancelled' && inv.status != 'void';
-    final canVoid = inv.status != 'void' && inv.status != 'cancelled';
+    final canVoid = isAdmin && inv.status != 'void' && inv.status != 'cancelled';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
@@ -1416,7 +1552,9 @@ class _InvoiceTile extends StatelessWidget {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
-        onTap: canPay ? () => onRecordPayment(inv) : null,
+        onTap: () => canPay
+            ? onRecordPayment(inv)
+            : showDialog(context: context, builder: (_) => _InvoiceDetailDialog(invoice: inv, currency: currency, onAction: () => onRecordPayment(inv))),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
           child: Row(
@@ -1493,20 +1631,41 @@ class _InvoiceTile extends StatelessWidget {
                     icon: const Icon(Icons.more_vert, size: 18),
                     padding: EdgeInsets.zero,
                     itemBuilder: (_) => [
+                      const PopupMenuItem(
+                        value: 'detail',
+                        child: Row(children: [Icon(Icons.info_outline, size: 18), SizedBox(width: 8), Text('Ver Detalhes')]),
+                      ),
                       if (canPay)
                         const PopupMenuItem(
                           value: 'pay',
                           child: Row(children: [Icon(Icons.payments_outlined, size: 18, color: AppTheme.success), SizedBox(width: 8), Text('Registar Pagamento')]),
                         ),
+                      if (isAdmin && canVoid && onPartialCreditNote != null)
+                        const PopupMenuItem(
+                          value: 'partial_nc',
+                          child: Row(children: [Icon(Icons.remove_circle_outline, size: 18, color: Colors.orange), SizedBox(width: 8), Text('Nota de Crédito Parcial')]),
+                        ),
                       if (canVoid)
                         const PopupMenuItem(
                           value: 'void',
-                          child: Row(children: [Icon(Icons.cancel_outlined, size: 18, color: AppTheme.danger), SizedBox(width: 8), Text('Anular')]),
+                          child: Row(children: [Icon(Icons.cancel_outlined, size: 18, color: AppTheme.danger), SizedBox(width: 8), Text('Anular (NC total)')]),
+                        ),
+                      if (isAdmin && (inv.status == 'paid' || inv.status == 'partially_paid'))
+                        const PopupMenuItem(
+                          value: 'reverse',
+                          child: Row(children: [Icon(Icons.undo_outlined, size: 18, color: AppTheme.danger), SizedBox(width: 8), Text('Ver Pagamentos / Reverter')]),
                         ),
                     ],
                     onSelected: (action) {
+                      if (action == 'detail') {
+                        showDialog(context: context, builder: (_) => _InvoiceDetailDialog(invoice: inv, currency: currency, onAction: () => onRecordPayment(inv)));
+                      }
                       if (action == 'pay') onRecordPayment(inv);
+                      if (action == 'partial_nc' && onPartialCreditNote != null) onPartialCreditNote!(inv);
                       if (action == 'void') onVoid(inv);
+                      if (action == 'reverse') {
+                        showDialog(context: context, builder: (_) => _InvoiceDetailDialog(invoice: inv, currency: currency, onAction: () => onRecordPayment(inv), showPayments: true));
+                      }
                     },
                   ),
                 ],
@@ -1774,14 +1933,17 @@ class _RecordPaymentDialogState extends ConsumerState<_RecordPaymentDialog> {
   DateTime _paymentDate = DateTime.now();
   String _paymentMethod = 'multicaixa_express';
   PlatformFile? _proofFile;
+  bool _openAmount = false; // when true: no target invoice, allocates oldest-first
   bool _isLoading = false;
   String? _error;
 
   static const _methods = {
     'multicaixa_express': 'Multicaixa Express',
+    'multicaixa_ref': 'Referência Multicaixa',
     'bank_transfer': 'Transferência Bancária',
     'cash': 'Numerário',
-    'cheque': 'Cheque',
+    'check': 'Cheque',
+    'other': 'Outro',
   };
 
   @override
@@ -1853,7 +2015,7 @@ class _RecordPaymentDialogState extends ConsumerState<_RecordPaymentDialog> {
 
       await api.post('/finance/payments', data: {
         'billing_guardian_id': widget.invoice.billingGuardianId,
-        'target_invoice_ids': [widget.invoice.id],
+        if (!_openAmount) 'target_invoice_ids': [widget.invoice.id],
         'amount': amount,
         'payment_date': dateStr,
         'payment_method': _paymentMethod,
@@ -1912,6 +2074,15 @@ class _RecordPaymentDialogState extends ConsumerState<_RecordPaymentDialog> {
                   ),
                 ),
                 const SizedBox(height: 14),
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Alocação automática (mais antigas primeiro)', style: TextStyle(fontSize: 13)),
+                  subtitle: const Text('O pagamento não fica associado a esta factura específica', style: TextStyle(fontSize: 11)),
+                  value: _openAmount,
+                  onChanged: (v) => setState(() => _openAmount = v),
+                ),
+                const SizedBox(height: 8),
                 TextFormField(
                   controller: _amountCtrl,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -2199,6 +2370,451 @@ class _BulkGenerateDialogState extends ConsumerState<_BulkGenerateDialog> {
   }
 }
 
+// Invoice Detail Dialog (UC-FI4)
+class _InvoiceDetailDialog extends ConsumerStatefulWidget {
+  final Invoice invoice;
+  final NumberFormat currency;
+  final VoidCallback onAction;
+  final bool showPayments;
+  const _InvoiceDetailDialog({required this.invoice, required this.currency, required this.onAction, this.showPayments = false});
+
+  @override
+  ConsumerState<_InvoiceDetailDialog> createState() => _InvoiceDetailDialogState();
+}
+
+class _InvoiceDetailDialogState extends ConsumerState<_InvoiceDetailDialog> with SingleTickerProviderStateMixin {
+  late TabController _tabs;
+  Map<String, dynamic>? _detail;
+  List<Map<String, dynamic>> _payments = [];
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabs = TabController(length: 3, vsync: this, initialIndex: widget.showPayments ? 1 : 0);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final api = ref.read(apiClientProvider);
+      final detail = await api.get('/finance/invoices/${widget.invoice.id}') as Map<String, dynamic>;
+      setState(() {
+        _detail = detail;
+        _payments = (detail['payment_allocations'] as List? ?? []).cast<Map<String, dynamic>>();
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() { _error = e.toString(); _loading = false; });
+    }
+  }
+
+  Future<void> _reversePayment(String paymentId) async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (_) => _ReasonDialog(title: 'Motivo da Reversão', hint: 'Descreva o motivo da reversão do pagamento'),
+    );
+    if (reason == null) return;
+    try {
+      final api = ref.read(apiClientProvider);
+      await api.post('/finance/payments/$paymentId/reverse', data: {'reason': reason});
+      widget.onAction();
+      await _load();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pagamento revertido'), backgroundColor: AppTheme.success));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppTheme.danger));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final inv = widget.invoice;
+    final isAdmin = ref.watch(authProvider).isAdmin;
+    final currency = widget.currency;
+    return Dialog(
+      child: SizedBox(
+        width: 560,
+        height: 520,
+        child: Column(
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 16, 8, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(inv.fullDocumentNumber ?? 'Factura', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        Text(inv.childName ?? '—', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                  _StatusBadge(status: inv.status, label: inv.statusLabel),
+                  IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+                ],
+              ),
+            ),
+            TabBar(
+              controller: _tabs,
+              tabs: const [Tab(text: 'Linhas'), Tab(text: 'Pagamentos'), Tab(text: 'Documentos')],
+            ),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _error != null
+                      ? Center(child: Text(_error!, style: const TextStyle(color: AppTheme.danger)))
+                      : TabBarView(
+                          controller: _tabs,
+                          children: [
+                            // Lines tab
+                            _LinesTab(detail: _detail!, currency: currency),
+                            // Payments tab
+                            _PaymentsTab(payments: _payments, currency: currency, isAdmin: isAdmin, onReverse: _reversePayment),
+                            // Documents tab (NC, RC)
+                            _RelatedDocsTab(detail: _detail!),
+                          ],
+                        ),
+            ),
+            // Action row
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fechar')),
+                  if (inv.status != 'paid' && inv.status != 'cancelled' && inv.status != 'void') ...[
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      onPressed: () { Navigator.pop(context); widget.onAction(); },
+                      icon: const Icon(Icons.payments_outlined, size: 16),
+                      label: const Text('Registar Pagamento'),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LinesTab extends StatelessWidget {
+  final Map<String, dynamic> detail;
+  final NumberFormat currency;
+  const _LinesTab({required this.detail, required this.currency});
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = (detail['lines'] as List? ?? []).cast<Map<String, dynamic>>();
+    if (lines.isEmpty) return const Center(child: Text('Sem linhas', style: TextStyle(color: AppTheme.textSecondary)));
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Summary header
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Text('${lines.length} linha(s)', style: const TextStyle(fontWeight: FontWeight.w700, color: AppTheme.textSecondary, fontSize: 12)),
+          Text('Total: ${currency.format((detail['gross_total'] as num?)?.toDouble() ?? 0)}', style: const TextStyle(fontWeight: FontWeight.bold)),
+        ]),
+        const SizedBox(height: 8),
+        ...lines.map((l) {
+          final desc = l['description'] as String? ?? '—';
+          final qty = (l['quantity'] as num?)?.toDouble() ?? 1;
+          final unit = (l['unit_price'] as num?)?.toDouble() ?? 0;
+          final total = (l['line_total'] as num?)?.toDouble() ?? 0;
+          final iva = (l['iva_rate'] as num?)?.toDouble() ?? 0;
+          final credited = (l['credited_amount'] as num?)?.toDouble() ?? 0;
+          return Container(
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade200)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(desc, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                const SizedBox(height: 4),
+                Row(children: [
+                  Text('${qty.toStringAsFixed(qty == qty.roundToDouble() ? 0 : 2)} × ${currency.format(unit)}', style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                  if (iva > 0) Text(' + IVA ${iva.toStringAsFixed(0)}%', style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                  const Spacer(),
+                  Text(currency.format(total), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                ]),
+                if (credited > 0)
+                  Text('Creditado: ${currency.format(credited)}', style: const TextStyle(fontSize: 11, color: Colors.orange)),
+              ],
+            ),
+          );
+        }),
+        const Divider(),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          const Text('IVA Total', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+          Text(currency.format((detail['iva_total'] as num?)?.toDouble() ?? 0), style: const TextStyle(fontSize: 12)),
+        ]),
+        const SizedBox(height: 2),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          const Text('Total Bruto', style: TextStyle(fontWeight: FontWeight.bold)),
+          Text(currency.format((detail['gross_total'] as num?)?.toDouble() ?? 0), style: const TextStyle(fontWeight: FontWeight.bold)),
+        ]),
+      ],
+    );
+  }
+}
+
+class _PaymentsTab extends StatelessWidget {
+  final List<Map<String, dynamic>> payments;
+  final NumberFormat currency;
+  final bool isAdmin;
+  final Future<void> Function(String paymentId) onReverse;
+  const _PaymentsTab({required this.payments, required this.currency, required this.isAdmin, required this.onReverse});
+
+  @override
+  Widget build(BuildContext context) {
+    if (payments.isEmpty) {
+      return const Center(child: Text('Nenhum pagamento registado', style: TextStyle(color: AppTheme.textSecondary)));
+    }
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: payments.map((p) {
+        final id = p['id']?.toString() ?? '';
+        final amount = (p['amount'] as num?)?.toDouble() ?? 0;
+        final date = p['payment_date'] as String? ?? '';
+        final method = p['payment_method'] as String? ?? '';
+        final status = p['status'] as String? ?? 'normal';
+        final isReversed = status == 'reversed';
+        return Card(
+          margin: const EdgeInsets.only(bottom: 6),
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+            side: BorderSide(color: isReversed ? Colors.grey.shade300 : AppTheme.success.withOpacity(0.3)),
+          ),
+          child: ListTile(
+            dense: true,
+            leading: Icon(isReversed ? Icons.undo_outlined : Icons.check_circle_outline, color: isReversed ? Colors.grey : AppTheme.success, size: 20),
+            title: Text(currency.format(amount), style: TextStyle(fontWeight: FontWeight.bold, color: isReversed ? Colors.grey : AppTheme.success)),
+            subtitle: Text('$date · $method${isReversed ? ' · REVERTIDO' : ''}', style: const TextStyle(fontSize: 11)),
+            trailing: isAdmin && !isReversed
+                ? TextButton(
+                    onPressed: () => onReverse(id),
+                    style: TextButton.styleFrom(foregroundColor: AppTheme.danger, visualDensity: VisualDensity.compact),
+                    child: const Text('Reverter', style: TextStyle(fontSize: 12)),
+                  )
+                : null,
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _RelatedDocsTab extends StatelessWidget {
+  final Map<String, dynamic> detail;
+  const _RelatedDocsTab({required this.detail});
+
+  @override
+  Widget build(BuildContext context) {
+    final creditNotes = (detail['credit_notes'] as List? ?? []).cast<Map<String, dynamic>>();
+    final receipts = (detail['receipts'] as List? ?? []).cast<Map<String, dynamic>>();
+    if (creditNotes.isEmpty && receipts.isEmpty) {
+      return const Center(child: Text('Nenhum documento relacionado', style: TextStyle(color: AppTheme.textSecondary)));
+    }
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        if (creditNotes.isNotEmpty) ...[
+          const Text('Notas de Crédito', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: AppTheme.textSecondary)),
+          const SizedBox(height: 6),
+          ...creditNotes.map((nc) => ListTile(
+            dense: true,
+            leading: const Icon(Icons.remove_circle_outline, color: Colors.orange, size: 18),
+            title: Text(nc['full_document_number'] as String? ?? '—', style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
+            subtitle: Text(nc['invoice_date'] as String? ?? '', style: const TextStyle(fontSize: 11)),
+          )),
+          const SizedBox(height: 12),
+        ],
+        if (receipts.isNotEmpty) ...[
+          const Text('Recibos (RC)', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: AppTheme.textSecondary)),
+          const SizedBox(height: 6),
+          ...receipts.map((rc) => ListTile(
+            dense: true,
+            leading: const Icon(Icons.receipt_long_outlined, color: AppTheme.success, size: 18),
+            title: Text(rc['full_document_number'] as String? ?? '—', style: const TextStyle(fontFamily: 'monospace', fontSize: 13)),
+            subtitle: Text(rc['invoice_date'] as String? ?? rc['payment_date'] as String? ?? '', style: const TextStyle(fontSize: 11)),
+          )),
+        ],
+      ],
+    );
+  }
+}
+
+// Generic reason input dialog
+class _ReasonDialog extends StatefulWidget {
+  final String title;
+  final String hint;
+  const _ReasonDialog({required this.title, required this.hint});
+
+  @override
+  State<_ReasonDialog> createState() => _ReasonDialogState();
+}
+
+class _ReasonDialogState extends State<_ReasonDialog> {
+  final _ctrl = TextEditingController();
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: TextField(
+        controller: _ctrl,
+        decoration: InputDecoration(hintText: widget.hint, border: const OutlineInputBorder()),
+        maxLines: 3,
+        autofocus: true,
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+        FilledButton(
+          onPressed: () {
+            if (_ctrl.text.trim().isNotEmpty) Navigator.pop(context, _ctrl.text.trim());
+          },
+          child: const Text('Confirmar'),
+        ),
+      ],
+    );
+  }
+}
+
+// Partial Credit Note Dialog
+class _PartialCreditNoteDialog extends ConsumerStatefulWidget {
+  final Invoice invoice;
+  final VoidCallback onCreated;
+  const _PartialCreditNoteDialog({required this.invoice, required this.onCreated});
+
+  @override
+  ConsumerState<_PartialCreditNoteDialog> createState() => _PartialCreditNoteDialogState();
+}
+
+class _PartialCreditNoteDialogState extends ConsumerState<_PartialCreditNoteDialog> {
+  final _amountCtrl = TextEditingController();
+  final _reasonCtrl = TextEditingController();
+  bool _isLoading = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _amountCtrl.dispose();
+    _reasonCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final amount = double.tryParse(_amountCtrl.text.trim());
+    if (amount == null || amount <= 0) {
+      setState(() => _error = 'Introduza um valor válido');
+      return;
+    }
+    final maxAmount = widget.invoice.balance > 0 ? widget.invoice.balance : widget.invoice.totalAmount;
+    if (amount > maxAmount) {
+      setState(() => _error = 'Valor excede o saldo da factura (${maxAmount.toStringAsFixed(2)})');
+      return;
+    }
+    setState(() { _isLoading = true; _error = null; });
+    try {
+      final api = ref.read(apiClientProvider);
+      await api.post('/finance/credit-notes', data: {
+        'invoice_id': widget.invoice.id,
+        'amount': amount,
+        if (_reasonCtrl.text.trim().isNotEmpty) 'reason': _reasonCtrl.text.trim(),
+      });
+      widget.onCreated();
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Nota de crédito parcial emitida'), backgroundColor: AppTheme.success),
+        );
+      }
+    } catch (e) {
+      setState(() { _error = e.toString(); _isLoading = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currency = ref.watch(currencyFormatProvider);
+    final inv = widget.invoice;
+    final maxAmount = inv.balance > 0 ? inv.balance : inv.totalAmount;
+    return AlertDialog(
+      title: const Text('Nota de Crédito Parcial'),
+      content: SizedBox(
+        width: 400,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: Colors.orange.withOpacity(0.08), borderRadius: BorderRadius.circular(8)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(inv.childName ?? 'Criança', style: const TextStyle(fontWeight: FontWeight.w700)),
+                  if (inv.fullDocumentNumber != null)
+                    Text(inv.fullDocumentNumber!, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                  Text('Total: ${currency.format(inv.totalAmount)} · Saldo: ${currency.format(maxAmount)}',
+                      style: const TextStyle(fontSize: 12)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _amountCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: 'Valor a creditar (${currency.currencySymbol}) *',
+                prefixIcon: const Icon(Icons.remove_circle_outline),
+                helperText: 'Máx: ${currency.format(maxAmount)}',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _reasonCtrl,
+              decoration: const InputDecoration(labelText: 'Motivo (opcional)', prefixIcon: Icon(Icons.notes)),
+              maxLines: 2,
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 10),
+              Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 12)),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: _isLoading ? null : () => Navigator.pop(context), child: const Text('Cancelar')),
+        FilledButton.icon(
+          onPressed: _isLoading ? null : _submit,
+          icon: _isLoading
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : const Icon(Icons.check, size: 16),
+          label: const Text('Emitir NC Parcial'),
+          style: FilledButton.styleFrom(backgroundColor: Colors.orange),
+        ),
+      ],
+    );
+  }
+}
+
 // Create Invoice Sheet
 class _CreateInvoiceSheet extends ConsumerStatefulWidget {
   final VoidCallback onCreated;
@@ -2216,6 +2832,8 @@ class _CreateInvoiceSheetState extends ConsumerState<_CreateInvoiceSheet> {
   String? _selectedChildId;
   DateTime _referenceMonth = DateTime.now();
   DateTime? _dueDate;
+  String _documentType = 'FT'; // FT, FR, ND
+  String _paymentMethod = 'multicaixa_express'; // only used for FR
   bool _isLoading = false;
   String? _error;
 
@@ -2244,12 +2862,13 @@ class _CreateInvoiceSheetState extends ConsumerState<_CreateInvoiceSheet> {
       ];
       final refStr = '${_referenceMonth.year.toString().padLeft(4, '0')}-${_referenceMonth.month.toString().padLeft(2, '0')}-01';
       final body = <String, dynamic>{
-        'document_type': 'FT',
+        'document_type': _documentType,
         'child_id': _selectedChildId,
         'reference_month': refStr,
         'lines': lines,
         if (_descCtrl.text.trim().isNotEmpty) 'description': _descCtrl.text.trim(),
-        if (_dueDate != null) 'due_date': '${_dueDate!.year.toString().padLeft(4, '0')}-${_dueDate!.month.toString().padLeft(2, '0')}-${_dueDate!.day.toString().padLeft(2, '0')}',
+        if (_dueDate != null && _documentType != 'FR') 'due_date': '${_dueDate!.year.toString().padLeft(4, '0')}-${_dueDate!.month.toString().padLeft(2, '0')}-${_dueDate!.day.toString().padLeft(2, '0')}',
+        if (_documentType == 'FR') 'payment_method': _paymentMethod,
       };
       await api.post('/finance/invoices', data: body);
       widget.onCreated();
@@ -2271,7 +2890,24 @@ class _CreateInvoiceSheetState extends ConsumerState<_CreateInvoiceSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Nova Factura', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+            Text(
+              _documentType == 'FR' ? 'Nova Factura-Recibo (FR)' : _documentType == 'ND' ? 'Nova Nota de Débito (ND)' : 'Nova Factura (FT)',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            Builder(builder: (ctx) {
+              final isAdmin = ref.watch(authProvider).isAdmin;
+              return SegmentedButton<String>(
+                segments: [
+                  const ButtonSegment(value: 'FT', label: Text('FT')),
+                  const ButtonSegment(value: 'FR', label: Text('FR')),
+                  if (isAdmin) const ButtonSegment(value: 'ND', label: Text('ND')),
+                ],
+                selected: {_documentType == 'ND' && !isAdmin ? 'FT' : _documentType},
+                onSelectionChanged: (v) => setState(() => _documentType = v.first),
+                style: const ButtonStyle(visualDensity: VisualDensity.compact),
+              );
+            }),
             const SizedBox(height: 16),
             childrenAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
@@ -2315,31 +2951,49 @@ class _CreateInvoiceSheetState extends ConsumerState<_CreateInvoiceSheet> {
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: InputDecoration(labelText: 'Outras taxas (${currency.currencySymbol})', prefixIcon: const Icon(Icons.add_circle_outline)),
             ),
-            const SizedBox(height: 12),
-            InkWell(
-              onTap: () async {
-                final picked = await showDatePicker(
-                  context: context,
-                  initialDate: _dueDate ?? DateTime.now().add(const Duration(days: 15)),
-                  firstDate: DateTime(2020),
-                  lastDate: DateTime(2035),
-                );
-                if (picked != null) setState(() => _dueDate = picked);
-              },
-              child: InputDecorator(
-                decoration: InputDecoration(
-                  labelText: 'Data Limite (opcional)',
-                  prefixIcon: const Icon(Icons.event_available),
-                  suffixIcon: _dueDate != null
-                      ? IconButton(icon: const Icon(Icons.clear, size: 18), onPressed: () => setState(() => _dueDate = null))
-                      : null,
-                ),
-                child: Text(
-                  _dueDate == null ? 'Não definida' : DateFormat('dd/MM/yyyy').format(_dueDate!),
-                  style: TextStyle(color: _dueDate == null ? AppTheme.textSecondary : null),
+            if (_documentType != 'FR') ...[
+              const SizedBox(height: 12),
+              InkWell(
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: _dueDate ?? DateTime.now().add(const Duration(days: 15)),
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime(2035),
+                  );
+                  if (picked != null) setState(() => _dueDate = picked);
+                },
+                child: InputDecorator(
+                  decoration: InputDecoration(
+                    labelText: 'Data Limite (opcional)',
+                    prefixIcon: const Icon(Icons.event_available),
+                    suffixIcon: _dueDate != null
+                        ? IconButton(icon: const Icon(Icons.clear, size: 18), onPressed: () => setState(() => _dueDate = null))
+                        : null,
+                  ),
+                  child: Text(
+                    _dueDate == null ? 'Não definida' : DateFormat('dd/MM/yyyy').format(_dueDate!),
+                    style: TextStyle(color: _dueDate == null ? AppTheme.textSecondary : null),
+                  ),
                 ),
               ),
-            ),
+            ],
+            if (_documentType == 'FR') ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: _paymentMethod,
+                decoration: const InputDecoration(labelText: 'Método de Pagamento *', prefixIcon: Icon(Icons.payment)),
+                items: const [
+                  DropdownMenuItem(value: 'multicaixa_express', child: Text('Multicaixa Express')),
+                  DropdownMenuItem(value: 'multicaixa_ref', child: Text('Referência Multicaixa')),
+                  DropdownMenuItem(value: 'bank_transfer', child: Text('Transferência Bancária')),
+                  DropdownMenuItem(value: 'cash', child: Text('Numerário')),
+                  DropdownMenuItem(value: 'check', child: Text('Cheque')),
+                  DropdownMenuItem(value: 'other', child: Text('Outro')),
+                ],
+                onChanged: (v) => setState(() => _paymentMethod = v!),
+              ),
+            ],
             const SizedBox(height: 12),
             TextFormField(
               controller: _descCtrl,
@@ -2358,7 +3012,7 @@ class _CreateInvoiceSheetState extends ConsumerState<_CreateInvoiceSheet> {
               onPressed: _isLoading ? null : _submit,
               child: _isLoading
                   ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Text('Criar Factura'),
+                  : Text(_documentType == 'FR' ? 'Criar Factura-Recibo' : _documentType == 'ND' ? 'Criar Nota de Débito' : 'Criar Factura'),
             ),
           ],
         ),

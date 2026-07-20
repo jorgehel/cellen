@@ -225,6 +225,10 @@ class InvoiceResponse(BaseModel):
     balance: DecimalFloat = Decimal("0")
     child_name: Optional[str] = None
     signature_excerpt: Optional[str] = None
+    # Enriched detail fields (populated on single GET /invoices/{id})
+    credit_notes: Optional[List[dict]] = None
+    receipts: Optional[List[dict]] = None
+    payment_allocations: Optional[List[dict]] = None
 
 
 class ParentInvoiceResponse(BaseModel):
@@ -521,6 +525,11 @@ class PaymentPlanCreate(BaseModel):
     billing_guardian_id: uuid.UUID
     invoice_ids: List[uuid.UUID]
     installments: List[PaymentPlanInstallmentInput]
+    notes: Optional[str] = None
+
+
+class PaymentPlanUpdate(BaseModel):
+    status: Optional[str] = None   # cancelled | breached
     notes: Optional[str] = None
 
 
