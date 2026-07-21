@@ -35,6 +35,14 @@ from app.models.finance import (  # noqa: F401
     PaymentPlan, PaymentPlanInstallment, ReminderLog, FinanceAuditEntry,
 )
 from app.models.grades import Subject, TurmaSubject, Mark  # noqa: F401
+from app.models.modern import (  # noqa: F401
+    Attendance, AttendanceLog, AttendanceDayStatus,
+    MessageThread, ThreadParticipant, Message,
+    Photo, Incident, Event, Notification, Announcement,
+    DocumentLibrary, Appointment, ChildEvaluation, HealthEvent,
+)
+from app.models.trip_authorization import TripAuthorization, TripAuthorizationResponse  # noqa: F401
+from app.models.pickup_auth import PickupAuthorization, MealOrder  # noqa: F401
 from app.models.website import (  # noqa: F401
     WebsiteSetting, WebsitePage, WebsiteSection, WebsiteMedia,
     WebsiteContactSubmission,
