@@ -6,6 +6,8 @@ import 'package:intl/intl.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/models/attendance.dart';
+import '../../../core/models/school_terms.dart';
+import '../../../core/providers/currency_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Providers
@@ -63,6 +65,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
     final attendanceAsync = ref.watch(attendanceTodayProvider);
     final auth = ref.watch(authProvider);
     final today = DateFormat('d \'de\' MMMM yyyy', 'pt_PT').format(DateTime.now());
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
 
     return Scaffold(
       appBar: AppBar(
@@ -167,7 +170,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: TextField(
                   decoration: InputDecoration(
-                    hintText: 'Pesquisar criança...',
+                    hintText: 'Pesquisar ${terms.student.toLowerCase()}...',
                     prefixIcon: const Icon(Icons.search),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -185,7 +188,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
               Expanded(
                 child: filtered.isEmpty
                     ? const Center(
-                        child: Text('Nenhuma criança encontrada'),
+                        child: Text('Nenhum ${terms.student.toLowerCase()} encontrado'),
                       )
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
@@ -255,7 +258,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
       if (records.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Todas as crianças já marcadas')),
+            SnackBar(content: Text('Todos os ${terms.students.toLowerCase()} já marcados')),
           );
         }
         setState(() => _isBulkLoading = false);
@@ -267,8 +270,8 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
       ref.invalidate(attendanceTodayProvider);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Todas as crianças marcadas como presentes'),
+          SnackBar(
+            content: Text('Todos os ${terms.students.toLowerCase()} marcados como presentes'),
             backgroundColor: Colors.green,
           ),
         );

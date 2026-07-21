@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/models/child.dart';
+import '../../core/models/school_terms.dart';
 import '../../core/providers/currency_provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_widget.dart';
@@ -177,7 +178,7 @@ class ContractsScreen extends ConsumerWidget {
 // ---------------------------------------------------------------------------
 // Contract card
 // ---------------------------------------------------------------------------
-class _ContractCard extends StatelessWidget {
+class _ContractCard extends ConsumerWidget {
   final Contract contract;
   final NumberFormat currency;
   final VoidCallback onGenerateInvoice;
@@ -197,7 +198,8 @@ class _ContractCard extends StatelessWidget {
       };
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
     final theme = Theme.of(context);
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -210,7 +212,7 @@ class _ContractCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    contract.childName ?? 'Criança',
+                    contract.childName ?? terms.student,
                     style: theme.textTheme.titleMedium
                         ?.copyWith(fontWeight: FontWeight.w700),
                   ),
@@ -328,7 +330,8 @@ class _CreateContractDialogState extends ConsumerState<_CreateContractDialog> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedChildId == null) {
-      setState(() => _error = 'Seleccione uma criança');
+      final terms = SchoolTerms.of(ref.read(schoolInfoProvider).valueOrNull);
+      setState(() => _error = 'Seleccione um ${terms.student.toLowerCase()}');
       return;
     }
     setState(() {
@@ -372,6 +375,7 @@ class _CreateContractDialogState extends ConsumerState<_CreateContractDialog> {
   @override
   Widget build(BuildContext context) {
     final childrenAsync = ref.watch(childrenForContractProvider);
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
 
     return AlertDialog(
       title: const Text('Novo Contrato'),
@@ -390,7 +394,7 @@ class _CreateContractDialogState extends ConsumerState<_CreateContractDialog> {
                   error: (e, _) => Text('Erro: $e'),
                   data: (children) => DropdownButtonFormField<String>(
                     value: _selectedChildId,
-                    decoration: const InputDecoration(labelText: 'Criança *'),
+                    decoration: InputDecoration(labelText: '${terms.student} *'),
                     isExpanded: true,
                     items: children
                         .map((c) => DropdownMenuItem(
@@ -398,7 +402,7 @@ class _CreateContractDialogState extends ConsumerState<_CreateContractDialog> {
                         .toList(),
                     onChanged: (v) => setState(() => _selectedChildId = v),
                     validator: (v) =>
-                        v == null ? 'Seleccione uma criança' : null,
+                        v == null ? 'Seleccione um ${terms.student.toLowerCase()}' : null,
                   ),
                 ),
                 const SizedBox(height: 12),

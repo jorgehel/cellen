@@ -9,6 +9,7 @@ import '../../../core/api/api_client.dart';
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/models/child.dart';
 import '../../../core/models/invoice.dart';
+import '../../../core/models/school_terms.dart';
 import '../../../core/providers/currency_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../finance/credit_notes_screen.dart';
@@ -792,7 +793,8 @@ class _InvoicesTabState extends ConsumerState<_InvoicesTab> {
   }
 
   void _showBulkResult(BuildContext context, int count, List<dynamic> warnings) {
-    showDialog(useRootNavigator: false, 
+    final terms = SchoolTerms.of(ref.read(schoolInfoProvider).valueOrNull);
+    showDialog(useRootNavigator: false,
       context: context,
       builder: (_) => AlertDialog(
         title: Row(
@@ -823,7 +825,7 @@ class _InvoicesTabState extends ConsumerState<_InvoicesTab> {
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
-                            '${w['child_name'] ?? 'Criança'}: ${w['reason'] ?? 'Erro'}',
+                            '${w['child_name'] ?? terms.student}: ${w['reason'] ?? 'Erro'}',
                             style: const TextStyle(fontSize: 12),
                           ),
                         ),
@@ -968,7 +970,7 @@ class _ContractsTabState extends ConsumerState<_ContractsTab> {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Factura gerada para ${c.childName ?? 'criança'}'),
+            content: Text('Factura gerada para ${c.childName ?? SchoolTerms.of(ref.read(schoolInfoProvider).valueOrNull).student.toLowerCase()}'),
             backgroundColor: AppTheme.success,
             action: SnackBarAction(
               label: 'Ver Facturas',
@@ -1473,6 +1475,7 @@ class _InvoiceTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final inv = invoice;
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
     final isAdmin = ref.watch(authProvider).isAdmin;
     final canPay = inv.status != 'paid' && inv.status != 'cancelled' && inv.status != 'void';
     final canVoid = isAdmin && inv.status != 'void' && inv.status != 'cancelled';
@@ -1515,7 +1518,7 @@ class _InvoiceTile extends ConsumerWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            inv.childName ?? 'Criança',
+                            inv.childName ?? terms.student,
                             style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
                           ),
                         ),
@@ -1652,7 +1655,7 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
-class _ContractCard extends StatelessWidget {
+class _ContractCard extends ConsumerWidget {
   final _Contract contract;
   final NumberFormat currency;
   final VoidCallback onGenerateInvoice;
@@ -1666,7 +1669,8 @@ class _ContractCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
     final c = contract;
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1688,7 +1692,7 @@ class _ContractCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    c.childName ?? 'Criança',
+                    c.childName ?? terms.student,
                     style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
                   ),
                 ),
@@ -1972,6 +1976,7 @@ class _RecordPaymentDialogState extends ConsumerState<_RecordPaymentDialog> {
   @override
   Widget build(BuildContext context) {
     final currency = ref.watch(currencyFormatProvider);
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
     final inv = widget.invoice;
     return AlertDialog(
       title: const Text('Registar Pagamento'),
@@ -1995,7 +2000,7 @@ class _RecordPaymentDialogState extends ConsumerState<_RecordPaymentDialog> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(inv.childName ?? 'Criança', style: const TextStyle(fontWeight: FontWeight.w700)),
+                      Text(inv.childName ?? terms.student, style: const TextStyle(fontWeight: FontWeight.w700)),
                       if (inv.fullDocumentNumber != null)
                         Text(inv.fullDocumentNumber!, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
                       const SizedBox(height: 4),
@@ -2691,6 +2696,7 @@ class _PartialCreditNoteDialogState extends ConsumerState<_PartialCreditNoteDial
   @override
   Widget build(BuildContext context) {
     final currency = ref.watch(currencyFormatProvider);
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
     final inv = widget.invoice;
     final maxAmount = inv.balance > 0 ? inv.balance : inv.totalAmount;
     return AlertDialog(
@@ -2707,7 +2713,7 @@ class _PartialCreditNoteDialogState extends ConsumerState<_PartialCreditNoteDial
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(inv.childName ?? 'Criança', style: const TextStyle(fontWeight: FontWeight.w700)),
+                  Text(inv.childName ?? terms.student, style: const TextStyle(fontWeight: FontWeight.w700)),
                   if (inv.fullDocumentNumber != null)
                     Text(inv.fullDocumentNumber!, style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
                   Text('Total: ${currency.format(inv.totalAmount)} · Saldo: ${currency.format(maxAmount)}',
@@ -2786,7 +2792,8 @@ class _CreateInvoiceSheetState extends ConsumerState<_CreateInvoiceSheet> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedChildId == null) {
-      setState(() => _error = 'Seleccione uma criança');
+      final terms = SchoolTerms.of(ref.read(schoolInfoProvider).valueOrNull);
+      setState(() => _error = 'Seleccione um ${terms.student.toLowerCase()}');
       return;
     }
     setState(() { _isLoading = true; _error = null; });
@@ -2819,6 +2826,7 @@ class _CreateInvoiceSheetState extends ConsumerState<_CreateInvoiceSheet> {
   Widget build(BuildContext context) {
     final childrenAsync = ref.watch(_childrenHubProvider);
     final currency = ref.watch(currencyFormatProvider);
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
 
     return Padding(
       padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: MediaQuery.of(context).viewInsets.bottom + 24),
@@ -2849,14 +2857,14 @@ class _CreateInvoiceSheetState extends ConsumerState<_CreateInvoiceSheet> {
             const SizedBox(height: 16),
             childrenAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Text('Erro ao carregar crianças: $e', style: const TextStyle(color: AppTheme.danger)),
+              error: (e, _) => Text('Erro ao carregar ${terms.students.toLowerCase()}: $e', style: const TextStyle(color: AppTheme.danger)),
               data: (children) => DropdownButtonFormField<String>(
                 value: _selectedChildId,
-                decoration: const InputDecoration(labelText: 'Criança *', prefixIcon: Icon(Icons.child_care)),
+                decoration: InputDecoration(labelText: '${terms.student} *', prefixIcon: Icon(terms.studentIcon)),
                 isExpanded: true,
                 items: children.map((c) => DropdownMenuItem(value: c.id, child: Text(c.fullName))).toList(),
                 onChanged: (v) => setState(() => _selectedChildId = v),
-                validator: (v) => v == null ? 'Seleccione uma criança' : null,
+                validator: (v) => v == null ? 'Seleccione um ${terms.student.toLowerCase()}' : null,
               ),
             ),
             const SizedBox(height: 12),
@@ -2992,7 +3000,8 @@ class _CreateContractDialogState extends ConsumerState<_CreateContractDialog> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_childId == null) {
-      setState(() => _error = 'Seleccione uma criança');
+      final terms = SchoolTerms.of(ref.read(schoolInfoProvider).valueOrNull);
+      setState(() => _error = 'Seleccione um ${terms.student.toLowerCase()}');
       return;
     }
     setState(() { _isLoading = true; _error = null; });
@@ -3019,6 +3028,7 @@ class _CreateContractDialogState extends ConsumerState<_CreateContractDialog> {
   @override
   Widget build(BuildContext context) {
     final childrenAsync = ref.watch(_childrenHubProvider);
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
     return AlertDialog(
       title: const Text('Novo Contrato'),
       content: SizedBox(
@@ -3035,11 +3045,11 @@ class _CreateContractDialogState extends ConsumerState<_CreateContractDialog> {
                   error: (e, _) => Text('Erro: $e'),
                   data: (children) => DropdownButtonFormField<String>(
                     value: _childId,
-                    decoration: const InputDecoration(labelText: 'Criança *', prefixIcon: Icon(Icons.child_care)),
+                    decoration: InputDecoration(labelText: '${terms.student} *', prefixIcon: Icon(terms.studentIcon)),
                     isExpanded: true,
                     items: children.map((c) => DropdownMenuItem(value: c.id, child: Text(c.fullName))).toList(),
                     onChanged: (v) => setState(() => _childId = v),
-                    validator: (v) => v == null ? 'Seleccione uma criança' : null,
+                    validator: (v) => v == null ? 'Seleccione um ${terms.student.toLowerCase()}' : null,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -3190,8 +3200,9 @@ class _EditContractDialogState extends ConsumerState<_EditContractDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
     return AlertDialog(
-      title: Text('Editar Contrato — ${widget.contract.childName ?? 'Criança'}'),
+      title: Text('Editar Contrato — ${widget.contract.childName ?? terms.student}'),
       content: SizedBox(
         width: 400,
         child: Column(

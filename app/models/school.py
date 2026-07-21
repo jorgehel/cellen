@@ -55,6 +55,7 @@ _SEGMENT_DEFAULTS: dict[str, dict] = {
     "preschool": {
         "caderneta": True,
         "evaluations": True,      # developmental milestone tracking
+        "activities": True,       # activity-based schedule management
         "meal_orders": True,
         "immunizations": True,
         "health": True,
@@ -68,6 +69,7 @@ _SEGMENT_DEFAULTS: dict[str, dict] = {
     "primary": {
         "caderneta": False,
         "evaluations": False,
+        "activities": False,      # K-12 uses subjects, not activities
         "meal_orders": True,
         "immunizations": True,
         "health": True,
@@ -81,6 +83,7 @@ _SEGMENT_DEFAULTS: dict[str, dict] = {
     "secondary": {
         "caderneta": False,
         "evaluations": False,
+        "activities": False,
         "meal_orders": False,
         "immunizations": False,
         "health": True,
@@ -94,6 +97,7 @@ _SEGMENT_DEFAULTS: dict[str, dict] = {
     "combined": {
         "caderneta": False,
         "evaluations": False,
+        "activities": True,       # has preschool component
         "meal_orders": True,
         "immunizations": True,
         "health": True,
@@ -107,6 +111,7 @@ _SEGMENT_DEFAULTS: dict[str, dict] = {
     "full": {
         "caderneta": True,
         "evaluations": True,
+        "activities": True,
         "meal_orders": True,
         "immunizations": True,
         "health": True,

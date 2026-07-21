@@ -9,6 +9,7 @@ import '../../../core/auth/auth_provider.dart';
 import '../../../core/models/caderneta.dart';
 import '../../../core/models/child.dart';
 import '../../../core/models/invoice.dart';
+import '../../../core/models/school_terms.dart';
 import '../../../core/providers/currency_provider.dart';
 import '../../../core/theme/app_theme.dart';
 
@@ -78,6 +79,7 @@ class _ParentDashboardScreenState
     final invoicesAsync = ref.watch(parentOutstandingInvoicesProvider);
     final unreadAsync = ref.watch(parentUnreadMessagesProvider);
     final currency = ref.watch(currencyFormatProvider);
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
     final now = DateTime.now();
     final isWide = MediaQuery.of(context).size.width >= 900;
 
@@ -206,9 +208,9 @@ class _ParentDashboardScreenState
               ),
 
             // ── Children cards ──
-            const Text(
-              'As Minhas Crianças',
-              style: TextStyle(
+            Text(
+              terms.isK12 ? 'Os Meus Educandos' : 'As Minhas Crianças',
+              style: const TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
                 color: AppTheme.textPrimary,
@@ -239,7 +241,7 @@ class _ParentDashboardScreenState
                       border: Border.all(color: AppTheme.border),
                     ),
                     child: const Center(
-                      child: Text('Nenhuma criança associada',
+                      child: Text('Nenhum ${terms.student.toLowerCase()} associado',
                           style: TextStyle(color: AppTheme.textSecondary)),
                     ),
                   );
@@ -552,12 +554,13 @@ class _ParentDashboardScreenState
 // Widgets
 // ---------------------------------------------------------------------------
 
-class _ChildCard extends StatelessWidget {
+class _ChildCard extends ConsumerWidget {
   final Child child;
 
   const _ChildCard({required this.child});
 
-  void _showChildActions(BuildContext context) {
+  void _showChildActions(BuildContext context, SchoolTerms terms) {
+    final teacherLabel = terms.isK12 ? 'professor' : 'educador';
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -592,7 +595,7 @@ class _ChildCard extends StatelessWidget {
               icon: Icons.menu_book_outlined,
               color: const Color(0xFF7C3AED),
               label: 'Caderneta',
-              subtitle: 'Relatórios diários do educador',
+              subtitle: 'Relatórios diários do $teacherLabel',
               onTap: () { Navigator.pop(context); context.go('/parent/caderneta'); },
             ),
             _ActionTile(
@@ -624,7 +627,8 @@ class _ChildCard extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
     String? ageStr;
     if (child.birthDate != null) {
       final now = DateTime.now();
@@ -642,7 +646,7 @@ class _ChildCard extends StatelessWidget {
       color: Colors.white,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
-        onTap: () => _showChildActions(context),
+        onTap: () => _showChildActions(context, terms),
         borderRadius: BorderRadius.circular(12),
         child: Container(
       decoration: BoxDecoration(

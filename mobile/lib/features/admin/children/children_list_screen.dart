@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/models/child.dart';
+import '../../../core/models/school_terms.dart';
+import '../../../core/providers/currency_provider.dart';
 import '../../../core/widgets/app_error_widget.dart';
 
 // ---------------------------------------------------------------------------
@@ -43,14 +45,16 @@ class _ChildrenListScreenState extends ConsumerState<ChildrenListScreen> {
   @override
   Widget build(BuildContext context) {
     final childrenAsync = ref.watch(childrenProvider);
+    final school = ref.watch(schoolInfoProvider).valueOrNull;
+    final terms = SchoolTerms.of(school);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Crianças'),
+        title: Text(terms.students),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => context.push('/admin/children/new'),
-        tooltip: 'Adicionar Criança',
+        tooltip: terms.isK12 ? 'Adicionar Aluno' : 'Adicionar Criança',
         child: const Icon(Icons.add),
       ),
       body: Column(
@@ -95,7 +99,7 @@ class _ChildrenListScreenState extends ConsumerState<ChildrenListScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.child_care,
+                        Icon(terms.studentIcon,
                             size: 64,
                             color: Theme.of(context)
                                 .colorScheme
@@ -103,7 +107,7 @@ class _ChildrenListScreenState extends ConsumerState<ChildrenListScreen> {
                         const SizedBox(height: 16),
                         Text(
                           _query.isEmpty
-                              ? 'Nenhuma criança encontrada'
+                              ? 'Nenhum ${terms.student.toLowerCase()} encontrado'
                               : 'Sem resultados para "$_query"',
                           style: Theme.of(context)
                               .textTheme

@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/api/api_client.dart';
+import '../../../core/models/school_terms.dart';
+import '../../../core/providers/currency_provider.dart';
 import '../../../core/theme/app_theme.dart';
 
 // ---------------------------------------------------------------------------
@@ -33,19 +35,23 @@ class PeopleHubScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final summaryAsync = ref.watch(_peopleSummaryProvider);
+    final school = ref.watch(schoolInfoProvider).valueOrNull;
+    final terms = SchoolTerms.of(school);
 
     final items = [
       _HubItem(
-        icon: Icons.child_care_outlined,
-        selectedIcon: Icons.child_care,
+        icon: terms.studentIcon,
+        selectedIcon: terms.studentIcon,
         color: Colors.blue,
-        label: 'Crianças',
-        description: 'Gerir perfis das crianças matriculadas',
+        label: terms.students,
+        description: terms.isK12
+            ? 'Gerir perfis dos alunos matriculados'
+            : 'Gerir perfis das crianças matriculadas',
         countKey: 'children',
         path: '/admin/children',
         fab: _HubFab(
           icon: Icons.person_add_outlined,
-          label: 'Nova Criança',
+          label: terms.isK12 ? 'Novo Aluno' : 'Nova Criança',
           path: '/admin/children/new',
         ),
       ),
@@ -53,8 +59,10 @@ class PeopleHubScreen extends ConsumerWidget {
         icon: Icons.people_outline,
         selectedIcon: Icons.people,
         color: Colors.green,
-        label: 'Encarregados',
-        description: 'Responsáveis e contactos de emergência',
+        label: terms.isK12 ? 'Encarregados' : 'Encarregados',
+        description: terms.isK12
+            ? 'Encarregados de educação e contactos'
+            : 'Responsáveis e contactos de emergência',
         countKey: 'guardians',
         path: '/admin/guardians',
         fab: _HubFab(
@@ -68,7 +76,9 @@ class PeopleHubScreen extends ConsumerWidget {
         selectedIcon: Icons.badge,
         color: Colors.purple,
         label: 'Funcionários',
-        description: 'Educadores, auxiliares e pessoal administrativo',
+        description: terms.isK12
+            ? 'Professores e pessoal administrativo'
+            : 'Educadores, auxiliares e pessoal administrativo',
         countKey: 'employees',
         path: '/admin/employees',
         fab: _HubFab(

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/api_client.dart';
+import '../../../core/models/school_terms.dart';
+import '../../../core/providers/currency_provider.dart';
 import '../../../core/widgets/app_error_widget.dart';
 
 // ---------------------------------------------------------------------------
@@ -146,14 +148,15 @@ class TurmasScreen extends ConsumerWidget {
   }
 }
 
-class _TurmaCard extends StatelessWidget {
+class _TurmaCard extends ConsumerWidget {
   final Turma turma;
   final VoidCallback onEdit;
 
   const _TurmaCard({required this.turma, required this.onEdit});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
     final occupancy = turma.occupancyRate;
     Color occupancyColor;
     if (occupancy >= 0.9) {
@@ -204,7 +207,7 @@ class _TurmaCard extends StatelessWidget {
               ),
             if (turma.teacherName != null)
               Text(
-                'Educador(a): ${turma.teacherName}',
+                '${terms.isK12 ? 'Professor(a)' : 'Educador(a)'}: ${turma.teacherName}',
                 style:
                     const TextStyle(fontSize: 13),
               ),
@@ -214,7 +217,7 @@ class _TurmaCard extends StatelessWidget {
             Row(
               children: [
                 Text(
-                  '${turma.currentPupils} / ${turma.maxCapacity} crianças',
+                  '${turma.currentPupils} / ${turma.maxCapacity} ${terms.students.toLowerCase()}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const Spacer(),
@@ -327,6 +330,7 @@ class _TurmaFormSheetState extends ConsumerState<_TurmaFormSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -351,9 +355,9 @@ class _TurmaFormSheetState extends ConsumerState<_TurmaFormSheet> {
 
             TextFormField(
               controller: _nameCtrl,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                   labelText: 'Nome da Turma *',
-                  prefixIcon: Icon(Icons.school)),
+                  prefixIcon: Icon(terms.classroomIcon)),
               validator: (v) =>
                   v == null || v.trim().isEmpty ? 'Campo obrigatório' : null,
             ),
@@ -361,9 +365,11 @@ class _TurmaFormSheetState extends ConsumerState<_TurmaFormSheet> {
 
             TextFormField(
               controller: _levelCtrl,
-              decoration: const InputDecoration(
-                  labelText: 'Nível (ex: Berçário, Creche)',
-                  prefixIcon: Icon(Icons.grade)),
+              decoration: InputDecoration(
+                  labelText: terms.isK12
+                      ? 'Nível (ex: 7º Ano, 10º Ano)'
+                      : 'Nível (ex: Berçário, Creche)',
+                  prefixIcon: const Icon(Icons.grade)),
             ),
             const SizedBox(height: 12),
 

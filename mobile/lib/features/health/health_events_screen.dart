@@ -6,6 +6,8 @@ import '../../core/api/api_client.dart';
 import '../../core/auth/auth_provider.dart';
 import '../../core/auth/auth_state.dart';
 import '../../core/models/child.dart';
+import '../../core/models/school_terms.dart';
+import '../../core/providers/currency_provider.dart';
 import '../../core/theme/app_theme.dart';
 
 // ---------------------------------------------------------------------------
@@ -99,6 +101,7 @@ class _HealthEventsScreenState extends ConsumerState<HealthEventsScreen> {
   Widget build(BuildContext context) {
     final eventsAsync = ref.watch(healthEventsProvider(_selectedChildId));
     final childrenAsync = ref.watch(childrenForHealthProvider);
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
 
     return Scaffold(
       backgroundColor: AppTheme.surface,
@@ -121,17 +124,17 @@ class _HealthEventsScreenState extends ConsumerState<HealthEventsScreen> {
               padding: const EdgeInsets.all(16),
               child: DropdownButtonFormField<String?>(
                 value: _selectedChildId,
-                decoration: const InputDecoration(
-                  labelText: 'Filtrar por criança',
-                  prefixIcon: Icon(Icons.child_care),
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: 'Filtrar por ${terms.student.toLowerCase()}',
+                  prefixIcon: Icon(terms.studentIcon),
+                  border: const OutlineInputBorder(),
                   filled: true,
                   fillColor: Colors.white,
                 ),
                 items: [
-                  const DropdownMenuItem<String?>(
+                  DropdownMenuItem<String?>(
                     value: null,
-                    child: Text('Todas as crianças'),
+                    child: Text('Todos os ${terms.students.toLowerCase()}'),
                   ),
                   ...children.map((c) => DropdownMenuItem<String?>(
                         value: c.id,
@@ -187,7 +190,7 @@ class _HealthEventsScreenState extends ConsumerState<HealthEventsScreen> {
 // ---------------------------------------------------------------------------
 // Health Event Card
 // ---------------------------------------------------------------------------
-class _HealthEventCard extends StatelessWidget {
+class _HealthEventCard extends ConsumerWidget {
   final HealthEvent event;
   const _HealthEventCard({required this.event});
 
@@ -215,7 +218,8 @@ class _HealthEventCard extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
     final color = _typeColor(event.eventType);
     return Card(
       elevation: 0,
@@ -261,7 +265,7 @@ class _HealthEventCard extends StatelessWidget {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  const Icon(Icons.child_care,
+                  Icon(terms.studentIcon,
                       size: 14, color: AppTheme.textSecondary),
                   const SizedBox(width: 4),
                   Text(
@@ -405,8 +409,9 @@ class _CreateHealthEventDialogState
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_childId == null) {
+      final terms = SchoolTerms.of(ref.read(schoolInfoProvider).valueOrNull);
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Selecione uma criança')));
+          .showSnackBar(SnackBar(content: Text('Selecione um ${terms.student.toLowerCase()}')));
       return;
     }
     setState(() => _loading = true);
@@ -443,6 +448,7 @@ class _CreateHealthEventDialogState
   @override
   Widget build(BuildContext context) {
     final childrenAsync = ref.watch(childrenForHealthProvider);
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
     return AlertDialog(
       title: const Text('Registar Evento de Saúde'),
       content: SizedBox(
@@ -455,12 +461,12 @@ class _CreateHealthEventDialogState
               children: [
                 childrenAsync.when(
                   loading: () => const LinearProgressIndicator(),
-                  error: (_, __) => const Text('Erro ao carregar crianças'),
+                  error: (_, __) => Text('Erro ao carregar ${terms.students.toLowerCase()}'),
                   data: (children) => DropdownButtonFormField<String?>(
                     value: _childId,
-                    decoration: const InputDecoration(
-                      labelText: 'Criança *',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: '${terms.student} *',
+                      border: const OutlineInputBorder(),
                     ),
                     items: children
                         .map((c) => DropdownMenuItem<String?>(

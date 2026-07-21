@@ -7,6 +7,7 @@ import '../../../core/api/api_client.dart';
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/models/child.dart';
 import '../../../core/models/invoice.dart';
+import '../../../core/models/school_terms.dart';
 import '../../../core/providers/currency_provider.dart';
 import '../../finance/credit_notes_screen.dart';
 
@@ -49,6 +50,7 @@ class _InvoicesScreenState extends ConsumerState<InvoicesScreen> {
   Widget build(BuildContext context) {
     final invoicesAsync = ref.watch(invoicesProvider);
     final currency = ref.watch(currencyFormatProvider);
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
 
     return Scaffold(
       appBar: AppBar(
@@ -179,7 +181,7 @@ class _InvoicesScreenState extends ConsumerState<InvoicesScreen> {
                               : null,
                           title: Text(
                             inv.childName ??
-                                'Criança ${inv.childId.substring(0, 8)}',
+                                '${terms.student} ${inv.childId.substring(0, 8)}',
                             style: const TextStyle(
                                 fontWeight: FontWeight.w600),
                           ),
@@ -897,7 +899,8 @@ class _CreateInvoiceSheetState
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedChildId == null) {
-      setState(() => _error = 'Seleccione uma criança');
+      final terms = SchoolTerms.of(ref.read(schoolInfoProvider).valueOrNull);
+      setState(() => _error = 'Seleccione um ${terms.student.toLowerCase()}');
       return;
     }
     setState(() {
@@ -959,6 +962,7 @@ class _CreateInvoiceSheetState
   Widget build(BuildContext context) {
     final childrenAsync = ref.watch(childrenForInvoiceProvider);
     final currency = ref.watch(currencyFormatProvider);
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
 
     return Padding(
       padding: EdgeInsets.only(
@@ -987,9 +991,9 @@ class _CreateInvoiceSheetState
               data: (children) =>
                   DropdownButtonFormField<String>(
                 value: _selectedChildId,
-                decoration: const InputDecoration(
-                  labelText: 'Criança *',
-                  prefixIcon: Icon(Icons.child_care),
+                decoration: InputDecoration(
+                  labelText: '${terms.student} *',
+                  prefixIcon: Icon(terms.studentIcon),
                 ),
                 items: children
                     .map((c) => DropdownMenuItem(
@@ -1000,7 +1004,7 @@ class _CreateInvoiceSheetState
                 onChanged: (v) =>
                     setState(() => _selectedChildId = v),
                 validator: (v) =>
-                    v == null ? 'Seleccione uma criança' : null,
+                    v == null ? 'Seleccione um ${terms.student.toLowerCase()}' : null,
               ),
             ),
             const SizedBox(height: 12),

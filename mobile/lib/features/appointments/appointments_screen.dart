@@ -7,6 +7,8 @@ import '../../core/auth/auth_provider.dart';
 import '../../core/auth/auth_state.dart';
 import '../../core/models/child.dart';
 import '../../core/models/employee.dart';
+import '../../core/models/school_terms.dart';
+import '../../core/providers/currency_provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_error_widget.dart';
 
@@ -216,6 +218,7 @@ class _AppointmentsList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
     if (appointments.isEmpty) {
       return Center(
         child: Column(
@@ -377,7 +380,7 @@ class _AppointmentCard extends StatelessWidget {
               const SizedBox(height: 2),
               Row(
                 children: [
-                  const Icon(Icons.child_care,
+                  Icon(terms.studentIcon,
                       size: 14, color: AppTheme.textSecondary),
                   const SizedBox(width: 4),
                   Text(a.childName!,
@@ -526,6 +529,7 @@ class _CreateAppointmentDialogState
   Widget build(BuildContext context) {
     final employeesAsync = ref.watch(employeesForAppointmentProvider);
     final childrenAsync = ref.watch(childrenForAppointmentProvider);
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
 
     return AlertDialog(
       title: const Text('Nova Marcação'),
@@ -578,7 +582,7 @@ class _CreateAppointmentDialogState
                   error: (e, _) => Text('Erro: $e'),
                   data: (children) => DropdownButtonFormField<String>(
                     value: _selectedChildId,
-                    decoration: const InputDecoration(labelText: 'Criança'),
+                    decoration: InputDecoration(labelText: terms.student),
                     isExpanded: true,
                     items: children
                         .map((c) => DropdownMenuItem(

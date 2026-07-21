@@ -8,6 +8,8 @@ import '../../../core/auth/auth_provider.dart';
 import '../../../core/models/attendance.dart';
 import '../../../core/models/caderneta.dart';
 import '../../../core/models/child.dart';
+import '../../../core/models/school_terms.dart';
+import '../../../core/providers/currency_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_stat_card.dart';
 
@@ -93,6 +95,7 @@ class _TeacherDashboardScreenState
     final cadernetasAsync = ref.watch(teacherRecentCadernetsProvider);
     final childrenAsync = ref.watch(teacherChildrenProvider);
     final unreadAsync = ref.watch(teacherUnreadMsgProvider);
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
     final theme = Theme.of(context);
     final isWide = MediaQuery.of(context).size.width >= 900;
 
@@ -130,7 +133,7 @@ class _TeacherDashboardScreenState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '$greeting, ${auth.username ?? 'Educador(a)'}',
+                        '$greeting, ${auth.username ?? (terms.isK12 ? 'Professor(a)' : 'Educador(a)')}',
                         style: const TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.w800,
@@ -302,9 +305,9 @@ class _TeacherDashboardScreenState
 
             const SizedBox(height: 28),
 
-            // ── My Children ──
-            const Text(
-              'As Minhas Crianças',
+            // ── My Children / Students ──
+            Text(
+              terms.isK12 ? 'Os Meus Alunos' : 'As Minhas Crianças',
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
@@ -326,7 +329,7 @@ class _TeacherDashboardScreenState
                       border: Border.all(color: AppTheme.border),
                     ),
                     child: const Center(
-                      child: Text('Nenhuma criança atribuída.',
+                      child: Text('Nenhum ${terms.student.toLowerCase()} atribuído.',
                           style: TextStyle(color: AppTheme.textSecondary)),
                     ),
                   );
@@ -473,7 +476,7 @@ class _TeacherDashboardScreenState
                             ),
                             title: Text(
                               c.childName ??
-                                  'Criança ${c.childId.substring(0, 6)}',
+                                  '${terms.student} ${c.childId.substring(0, 6)}',
                               style: const TextStyle(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 14,

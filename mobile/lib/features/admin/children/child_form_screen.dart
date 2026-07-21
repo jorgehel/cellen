@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/models/child.dart';
+import '../../../core/models/school_terms.dart';
+import '../../../core/providers/currency_provider.dart';
 import 'child_detail_screen.dart' show childProvider;
 import 'children_list_screen.dart' show childrenProvider;
 
@@ -192,15 +194,16 @@ class _ChildFormScreenState extends ConsumerState<ChildFormScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
     if (_isLoadingChild) {
       return Scaffold(
-        appBar: AppBar(title: Text(isEditing ? 'Editar Criança' : 'Nova Criança')),
+        appBar: AppBar(title: Text(isEditing ? 'Editar ${terms.student}' : 'Novo ${terms.student}')),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(title: Text(isEditing ? 'Editar Criança' : 'Nova Criança')),
+      appBar: AppBar(title: Text(isEditing ? 'Editar ${terms.student}' : 'Novo ${terms.student}')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Form(
@@ -448,7 +451,7 @@ class _ChildFormScreenState extends ConsumerState<ChildFormScreen> {
                         width: 20,
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
-                    : Text(isEditing ? 'Guardar Alterações' : 'Criar Criança'),
+                    : Text(isEditing ? 'Guardar Alterações' : 'Criar ${terms.student}'),
               ),
               const SizedBox(height: 16),
             ],

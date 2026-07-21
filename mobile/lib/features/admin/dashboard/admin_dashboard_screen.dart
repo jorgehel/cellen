@@ -6,6 +6,8 @@ import 'package:intl/intl.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/models/attendance.dart';
+import '../../../core/models/school_terms.dart';
+import '../../../core/providers/currency_provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_stat_card.dart';
 
@@ -85,11 +87,13 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = ref.read(authProvider);
+    final school = ref.watch(schoolInfoProvider).valueOrNull;
+    final terms = SchoolTerms.of(school);
+
     final childrenAsync = ref.watch(adminChildrenCountProvider);
     final attendanceAsync = ref.watch(adminAttendanceTodayProvider);
     final unreadAsync = ref.watch(adminUnreadNotifProvider);
     final financeAsync = ref.watch(adminFinanceProvider);
-    final theme = Theme.of(context);
     final isWide = MediaQuery.of(context).size.width >= 900;
 
     final now = DateTime.now();
@@ -101,6 +105,11 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
             : 'Boa noite';
     final dateStr =
         DateFormat('EEEE, d \'de\' MMMM yyyy', 'pt_PT').format(now);
+
+    // Segment-aware labels
+    final studentsLabel =
+        '${terms.students} Activos${terms.students == 'Crianças' ? '' : ''}';
+    final studentIcon = terms.studentIcon;
 
     void refresh() {
       ref.invalidate(adminChildrenCountProvider);
@@ -154,7 +163,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
             ),
             const SizedBox(height: 24),
 
-            // ── Stat cards section ──
+            // ── Stat cards ──
             const Text(
               'Resumo do Dia',
               style: TextStyle(
@@ -174,22 +183,22 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
               children: [
                 childrenAsync.when(
                   loading: () => AppStatCard(
-                    label: 'Crianças Activas',
+                    label: studentsLabel,
                     value: '...',
-                    icon: Icons.child_care,
+                    icon: studentIcon,
                     color: AppTheme.primary,
                     onTap: () => context.go('/admin/children'),
                   ),
                   error: (_, __) => AppStatCard(
-                    label: 'Crianças Activas',
+                    label: studentsLabel,
                     value: '-',
-                    icon: Icons.child_care,
+                    icon: studentIcon,
                     color: AppTheme.primary,
                   ),
                   data: (count) => AppStatCard(
-                    label: 'Crianças Activas',
+                    label: studentsLabel,
                     value: '$count',
-                    icon: Icons.child_care,
+                    icon: studentIcon,
                     color: AppTheme.primary,
                     onTap: () => context.go('/admin/children'),
                   ),
@@ -269,7 +278,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
 
             const SizedBox(height: 28),
 
-            // ── Quick Actions ──
+            // ── Quick Actions — segment-aware ──
             const Text(
               'Acções Rápidas',
               style: TextStyle(
@@ -304,10 +313,16 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                   onTap: () => context.go('/events'),
                 ),
                 _QuickAction(
-                  icon: Icons.people,
-                  label: 'Crianças',
+                  icon: studentIcon,
+                  label: terms.students,
                   onTap: () => context.go('/admin/children'),
                 ),
+                if (terms.isK12)
+                  _QuickAction(
+                    icon: Icons.table_chart_outlined,
+                    label: 'Horário',
+                    onTap: () => context.go('/admin/academic/timetable'),
+                  ),
                 _QuickAction(
                   icon: Icons.badge,
                   label: 'Funcionários',
@@ -353,7 +368,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                   )),
               error: (e, _) => Text(
                 'Erro ao carregar actividade: $e',
-                style: TextStyle(color: theme.colorScheme.error),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
               data: (summary) {
                 final recent = summary.records.take(5).toList();
@@ -401,9 +416,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                         children: [
                           _AttendanceActivityTile(record: entry.value),
                           if (!isLast)
-                            const Divider(
-                                height: 1,
-                                color: AppTheme.border),
+                            const Divider(height: 1, color: AppTheme.border),
                         ],
                       );
                     }).toList(),

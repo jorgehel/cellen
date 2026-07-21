@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/api/api_client.dart';
+import '../../../core/models/school_terms.dart';
+import '../../../core/providers/currency_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Data model
@@ -94,6 +96,7 @@ class _EnrollmentsScreenState
   @override
   Widget build(BuildContext context) {
     final enrollmentsAsync = ref.watch(enrollmentsProvider);
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
 
     return Scaffold(
       appBar: AppBar(
@@ -202,8 +205,8 @@ class _EnrollmentsScreenState
                     scrollDirection: Axis.horizontal,
                     child: DataTable(
                       columnSpacing: 24,
-                      columns: const [
-                        DataColumn(label: Text('Criança')),
+                      columns: [
+                        DataColumn(label: Text(terms.student)),
                         DataColumn(label: Text('Turma')),
                         DataColumn(label: Text('Ano Lectivo')),
                         DataColumn(label: Text('Taxa Matrícula')),
@@ -392,7 +395,8 @@ class _CreateEnrollmentSheetState
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedChildId == null) {
-      setState(() => _error = 'Seleccione uma criança');
+      final terms = SchoolTerms.of(ref.read(schoolInfoProvider).valueOrNull);
+      setState(() => _error = 'Seleccione um ${terms.student.toLowerCase()}');
       return;
     }
     if (_selectedScheduleId == null) {
@@ -440,6 +444,7 @@ class _CreateEnrollmentSheetState
   Widget build(BuildContext context) {
     final isLoadingData =
         _loadingChildren || _loadingSchedules || _loadingYears;
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
     final displayFmt = DateFormat('dd/MM/yyyy');
 
     return Padding(
@@ -473,9 +478,9 @@ class _CreateEnrollmentSheetState
                     // Child dropdown
                     DropdownButtonFormField<String>(
                       value: _selectedChildId,
-                      decoration: const InputDecoration(
-                        labelText: 'Criança *',
-                        prefixIcon: Icon(Icons.child_care),
+                      decoration: InputDecoration(
+                        labelText: '${terms.student} *',
+                        prefixIcon: Icon(terms.studentIcon),
                       ),
                       items: _children
                           .map((c) {
@@ -494,7 +499,7 @@ class _CreateEnrollmentSheetState
                       onChanged: (v) =>
                           setState(() => _selectedChildId = v),
                       validator: (v) => v == null
-                          ? 'Seleccione uma criança'
+                          ? 'Seleccione um ${terms.student.toLowerCase()}'
                           : null,
                     ),
                     const SizedBox(height: 12),

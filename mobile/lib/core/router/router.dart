@@ -350,6 +350,8 @@ const _roleItemOrder = [
 
 /// Feature flag required per sidebar path. Paths not listed are always shown.
 const _pathFeatureMap = {
+  '/admin/activities':      'activities',
+  '/admin/food-hub':        'meal_orders',
   '/teacher/caderneta':     'caderneta',
   '/teacher/grades':        'grades',
   '/timetable':             'timetable_k12',

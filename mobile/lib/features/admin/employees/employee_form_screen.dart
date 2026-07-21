@@ -7,6 +7,8 @@ import 'package:intl/intl.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/models/employee.dart';
+import '../../../core/models/school_terms.dart';
+import '../../../core/providers/currency_provider.dart';
 import 'employees_list_screen.dart' show employeesProvider;
 
 // ---------------------------------------------------------------------------
@@ -180,6 +182,7 @@ class _EmployeeFormScreenState extends ConsumerState<EmployeeFormScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
     if (_isLoadingEmployee) {
       return Scaffold(
         appBar: AppBar(
@@ -309,9 +312,9 @@ class _EmployeeFormScreenState extends ConsumerState<EmployeeFormScreen> {
                   labelText: 'Tipo de Funcionário *',
                   prefixIcon: Icon(Icons.work),
                 ),
-                items: const [
+                items: [
                   DropdownMenuItem(
-                      value: 'teacher', child: Text('Educador(a)')),
+                      value: 'teacher', child: Text(terms.isK12 ? 'Professor(a)' : 'Educador(a)')),
                   DropdownMenuItem(
                       value: 'staff', child: Text('Auxiliar')),
                   DropdownMenuItem(

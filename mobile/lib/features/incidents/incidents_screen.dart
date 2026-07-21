@@ -6,6 +6,8 @@ import '../../core/api/api_client.dart';
 import '../../core/auth/auth_provider.dart';
 import '../../core/auth/auth_state.dart';
 import '../../core/models/incident.dart';
+import '../../core/models/school_terms.dart';
+import '../../core/providers/currency_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Providers
@@ -358,7 +360,8 @@ class _CreateIncidentDialogState extends ConsumerState<_CreateIncidentDialog> {
 
   Future<void> _submit() async {
     if (_selectedChildId == null || _descCtrl.text.trim().isEmpty) {
-      setState(() => _error = 'Seleccione a criança e preencha a descrição');
+      final terms = SchoolTerms.of(ref.read(schoolInfoProvider).valueOrNull);
+      setState(() => _error = 'Seleccione o ${terms.student.toLowerCase()} e preencha a descrição');
       return;
     }
     setState(() { _loading = true; _error = null; });
@@ -385,6 +388,7 @@ class _CreateIncidentDialogState extends ConsumerState<_CreateIncidentDialog> {
   @override
   Widget build(BuildContext context) {
     final childrenAsync = ref.watch(childrenForIncidentProvider);
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
 
     return AlertDialog(
       title: const Text('Nova Ocorrência'),
@@ -394,12 +398,12 @@ class _CreateIncidentDialogState extends ConsumerState<_CreateIncidentDialog> {
           children: [
             childrenAsync.when(
               loading: () => const LinearProgressIndicator(),
-              error: (_, __) => const Text('Erro ao carregar crianças'),
+              error: (_, __) => Text('Erro ao carregar ${terms.students.toLowerCase()}'),
               data: (children) => DropdownButtonFormField<String>(
                 value: _selectedChildId,
-                decoration: const InputDecoration(
-                  labelText: 'Criança *',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: '${terms.student} *',
+                  border: const OutlineInputBorder(),
                 ),
                 items: children
                     .map((c) => DropdownMenuItem(

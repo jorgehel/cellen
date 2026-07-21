@@ -10,6 +10,7 @@ import '../../../core/models/caderneta.dart';
 import '../../../core/models/child.dart';
 import '../../../core/models/guardian.dart';
 import '../../../core/models/invoice.dart';
+import '../../../core/models/school_terms.dart';
 import '../../../core/providers/currency_provider.dart';
 import '../../../core/widgets/app_error_widget.dart';
 import 'children_list_screen.dart' show childrenProvider;
@@ -89,13 +90,14 @@ class ChildDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final childAsync = ref.watch(childProvider(id));
 
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
     return childAsync.when(
       loading: () => Scaffold(
-        appBar: AppBar(title: const Text('Criança')),
+        appBar: AppBar(title: Text(terms.student)),
         body: const Center(child: CircularProgressIndicator()),
       ),
       error: (e, _) => Scaffold(
-        appBar: AppBar(title: const Text('Criança')),
+        appBar: AppBar(title: Text(terms.student)),
         body: AppErrorWidget(error: e, onRetry: () => ref.invalidate(childProvider(id))),
       ),
       data: (child) => _ChildDetailView(child: child),
@@ -381,7 +383,7 @@ class _GuardiansTabState extends ConsumerState<_GuardiansTab> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Remover ligação'),
-        content: Text('Remover $guardianName desta criança?'),
+        content: Text('Remover $guardianName d${SchoolTerms.of(ref.read(schoolInfoProvider).valueOrNull).isK12 ? 'este aluno' : 'esta criança'}?'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),

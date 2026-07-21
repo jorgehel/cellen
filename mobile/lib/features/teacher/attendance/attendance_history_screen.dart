@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/models/school_terms.dart';
+import '../../../core/providers/currency_provider.dart';
 import '../../../core/theme/app_theme.dart';
 
 // ---------------------------------------------------------------------------
@@ -155,6 +157,7 @@ class _AttendanceHistoryScreenState
     final historyAsync = ref.watch(_attendanceHistoryProvider(_query));
     final childrenAsync = ref.watch(_childrenPickerProvider);
     final dateFmt = DateFormat('dd/MM/yyyy');
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
 
     // Auto-select first child for parents (they can't use "all children" endpoint)
     childrenAsync.whenData((children) {
@@ -195,17 +198,17 @@ class _AttendanceHistoryScreenState
                   data: (children) {
                     return DropdownButtonFormField<String?>(
                       value: _selectedChildId,
-                      decoration: const InputDecoration(
-                        labelText: 'Criança',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: terms.student,
+                        border: const OutlineInputBorder(),
                         contentPadding:
-                            EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       ),
                       items: [
                         if (!isParent)
-                          const DropdownMenuItem<String?>(
+                          DropdownMenuItem<String?>(
                             value: null,
-                            child: Text('Todas as crianças'),
+                            child: Text('Todos os ${terms.students.toLowerCase()}'),
                           ),
                         ...children.map((c) => DropdownMenuItem<String?>(
                               value: c.id,
@@ -409,7 +412,7 @@ class _AttendanceHistoryScreenState
                                 leading: _statusIcon(r.status),
                                 title: Text(r.childName.isNotEmpty
                                     ? r.childName
-                                    : 'Criança'),
+                                    : terms.student),
                                 subtitle: Text(
                                   [
                                     _statusLabel(r.status),

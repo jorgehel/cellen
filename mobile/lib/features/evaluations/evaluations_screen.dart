@@ -6,6 +6,8 @@ import '../../core/api/api_client.dart';
 import '../../core/auth/auth_provider.dart';
 import '../../core/auth/auth_state.dart';
 import '../../core/models/child.dart';
+import '../../core/models/school_terms.dart';
+import '../../core/providers/currency_provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/boletim_pdf.dart';
 
@@ -112,6 +114,7 @@ class _EvaluationsScreenState extends ConsumerState<EvaluationsScreen> {
     final childrenAsync = ref.watch(childrenForEvaluationProvider);
     final auth = ref.watch(authProvider);
     final canCreate = auth.isAdmin || auth.isTeacher;
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
 
     return Scaffold(
       appBar: AppBar(
@@ -158,18 +161,18 @@ class _EvaluationsScreenState extends ConsumerState<EvaluationsScreen> {
                     padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
                     child: DropdownButtonFormField<String>(
                       value: _childFilter,
-                      decoration: const InputDecoration(
-                        labelText: 'Criança',
-                        prefixIcon: Icon(Icons.child_care),
+                      decoration: InputDecoration(
+                        labelText: terms.student,
+                        prefixIcon: Icon(terms.studentIcon),
                         isDense: true,
                         contentPadding:
-                            EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       ),
                       isExpanded: true,
                       items: [
-                        const DropdownMenuItem<String>(
+                        DropdownMenuItem<String>(
                           value: null,
-                          child: Text('Todas as crianças'),
+                          child: Text('Todos os ${terms.students.toLowerCase()}'),
                         ),
                         ...children.map((c) => DropdownMenuItem<String>(
                               value: c.id,
@@ -276,7 +279,7 @@ class _EvaluationsScreenState extends ConsumerState<EvaluationsScreen> {
                         const EdgeInsets.fromLTRB(12, 4, 12, 100),
                     itemCount: filtered.length,
                     itemBuilder: (context, i) =>
-                        _EvaluationCard(evaluation: filtered[i]),
+                        _EvaluationCard(evaluation: filtered[i], studentTerm: terms.student),
                   ),
                 );
               },
@@ -296,9 +299,9 @@ class _EvaluationsScreenState extends ConsumerState<EvaluationsScreen> {
       await showDialog<void>(useRootNavigator: false, 
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Seleccione uma Criança'),
-          content: const Text(
-            'Para gerar o Boletim de Notas, seleccione primeiro uma criança '
+          title: Text('Seleccione um ${SchoolTerms.of(ref.read(schoolInfoProvider).valueOrNull).student}'),
+          content: Text(
+            'Para gerar o Boletim de Notas, seleccione primeiro um ${SchoolTerms.of(ref.read(schoolInfoProvider).valueOrNull).student.toLowerCase()} '
             'no filtro acima.',
           ),
           actions: [
@@ -361,7 +364,8 @@ class _EvaluationsScreenState extends ConsumerState<EvaluationsScreen> {
 // ---------------------------------------------------------------------------
 class _EvaluationCard extends StatefulWidget {
   final ChildEvaluation evaluation;
-  const _EvaluationCard({required this.evaluation});
+  final String studentTerm;
+  const _EvaluationCard({required this.evaluation, required this.studentTerm});
 
   @override
   State<_EvaluationCard> createState() => _EvaluationCardState();
@@ -414,7 +418,7 @@ class _EvaluationCardState extends State<_EvaluationCard> {
                 children: [
                   Expanded(
                     child: Text(
-                      e.childName ?? 'Criança',
+                      e.childName ?? widget.studentTerm,
                       style: theme.textTheme.titleSmall
                           ?.copyWith(fontWeight: FontWeight.w700),
                     ),
@@ -582,7 +586,8 @@ class _CreateEvaluationDialogState
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedChildId == null) {
-      setState(() => _error = 'Seleccione uma criança');
+      final terms = SchoolTerms.of(ref.read(schoolInfoProvider).valueOrNull);
+      setState(() => _error = 'Seleccione um ${terms.student.toLowerCase()}');
       return;
     }
     setState(() {
@@ -620,6 +625,7 @@ class _CreateEvaluationDialogState
   @override
   Widget build(BuildContext context) {
     final childrenAsync = ref.watch(childrenForEvaluationProvider);
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
 
     return AlertDialog(
       title: const Text('Nova Avaliação'),
@@ -638,7 +644,7 @@ class _CreateEvaluationDialogState
                   error: (e, _) => Text('Erro: $e'),
                   data: (children) => DropdownButtonFormField<String>(
                     value: _selectedChildId,
-                    decoration: const InputDecoration(labelText: 'Criança *'),
+                    decoration: InputDecoration(labelText: '${terms.student} *'),
                     isExpanded: true,
                     items: children
                         .map((c) => DropdownMenuItem(
@@ -647,7 +653,7 @@ class _CreateEvaluationDialogState
                     onChanged: (v) =>
                         setState(() => _selectedChildId = v),
                     validator: (v) =>
-                        v == null ? 'Seleccione uma criança' : null,
+                        v == null ? 'Seleccione um ${terms.student.toLowerCase()}' : null,
                   ),
                 ),
                 const SizedBox(height: 12),

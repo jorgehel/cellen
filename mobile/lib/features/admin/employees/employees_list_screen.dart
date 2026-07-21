@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/models/employee.dart';
+import '../../../core/models/school_terms.dart';
+import '../../../core/providers/currency_provider.dart';
 
 // ---------------------------------------------------------------------------
 // Provider
@@ -71,6 +73,8 @@ class _EmployeesListScreenState extends ConsumerState<EmployeesListScreen> {
   @override
   Widget build(BuildContext context) {
     final employeesAsync = ref.watch(employeesProvider);
+    final school = ref.watch(schoolInfoProvider).valueOrNull;
+    final terms = SchoolTerms.of(school);
 
     return Scaffold(
       appBar: AppBar(
@@ -97,7 +101,7 @@ class _EmployeesListScreenState extends ConsumerState<EmployeesListScreen> {
                   ),
                   const SizedBox(width: 8),
                   _FilterChip(
-                    label: 'Educadores',
+                    label: terms.isK12 ? 'Professores' : 'Educadores',
                     selected: _filter == 'teacher',
                     onSelected: (_) =>
                         setState(() => _filter = 'teacher'),
