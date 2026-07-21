@@ -1,6 +1,8 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/api/api_client.dart';
@@ -51,6 +53,32 @@ final childInvoicesProvider =
 // ---------------------------------------------------------------------------
 // Screen
 // ---------------------------------------------------------------------------
+Future<void> _uploadPhoto(
+    BuildContext context, WidgetRef ref, String childId) async {
+  final picker = ImagePicker();
+  final image = await picker.pickImage(source: ImageSource.gallery, maxWidth: 800);
+  if (image == null) return;
+  try {
+    final api = ref.read(apiClientProvider);
+    final formData = FormData.fromMap({
+      'file': await MultipartFile.fromFile(image.path, filename: image.name),
+    });
+    await api.post('/children/$childId/photo', data: formData);
+    ref.invalidate(childProvider(childId));
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Foto actualizada')),
+      );
+    }
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao enviar foto: $e')),
+      );
+    }
+  }
+}
+
 class ChildDetailScreen extends ConsumerWidget {
   final String id;
 
@@ -119,7 +147,7 @@ class _ChildDetailView extends ConsumerWidget {
         ),
         body: TabBarView(
           children: [
-            _InfoTab(child: child),
+            _InfoTab(child: child, onUploadPhoto: () => _uploadPhoto(context, ref, child.id)),
             _GuardiansTab(childId: child.id),
             _CadernetaTab(childId: child.id),
             _InvoicesTab(childId: child.id),
@@ -135,7 +163,8 @@ class _ChildDetailView extends ConsumerWidget {
 // ---------------------------------------------------------------------------
 class _InfoTab extends StatelessWidget {
   final Child child;
-  const _InfoTab({required this.child});
+  final VoidCallback? onUploadPhoto;
+  const _InfoTab({required this.child, this.onUploadPhoto});
 
   @override
   Widget build(BuildContext context) {
@@ -150,10 +179,31 @@ class _InfoTab extends StatelessWidget {
           Center(
             child: Column(
               children: [
-                _ChildPhotoAvatar(
-                    photoUrl: child.photoUrl,
-                    name: child.fullName,
-                    radius: 48),
+                GestureDetector(
+                  onTap: onUploadPhoto,
+                  child: Stack(
+                    children: [
+                      _ChildPhotoAvatar(
+                          photoUrl: child.photoUrl,
+                          name: child.fullName,
+                          radius: 48),
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.primary,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(Icons.camera_alt,
+                              size: 16,
+                              color: Theme.of(context).colorScheme.onPrimary),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 12),
                 Text(
                   child.fullName,
@@ -175,7 +225,13 @@ class _InfoTab extends StatelessWidget {
           _InfoRow('Cédula', child.cedula),
           if (child.birthDate != null)
             _InfoRow('Data de Nascimento', df.format(child.birthDate!)),
+          if (child.placeOfBirth != null && child.placeOfBirth!.isNotEmpty)
+            _InfoRow('Local de Nascimento', child.placeOfBirth!),
           _InfoRow('Sexo', child.sexLabel),
+          if (child.nationality != null && child.nationality!.isNotEmpty)
+            _InfoRow('Nacionalidade', child.nationality!),
+          if (child.height != null)
+            _InfoRow('Altura', '${child.height} cm'),
           if (!child.isActive)
             _InfoRow('Estado', 'Inactivo'),
 
@@ -193,14 +249,18 @@ class _InfoTab extends StatelessWidget {
             Text(child.medicalPrescription!),
           ],
 
-          if (child.address != null && child.address!.isNotEmpty) ...[
+          if (child.emergencyContactName != null && child.emergencyContactName!.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _SectionTitle('Contacto de Emergência'),
+            _InfoRow('Nome', child.emergencyContactName!),
+            if (child.emergencyContactPhone != null)
+              _InfoRow('Telefone', child.emergencyContactPhone!),
+          ],
+
+          if (child.fullAddress != null) ...[
             const SizedBox(height: 16),
             _SectionTitle('Morada'),
-            _InfoRow('Endereço', child.address!),
-            if (child.addressCity != null)
-              _InfoRow('Cidade', child.addressCity!),
-            if (child.addressPostalCode != null)
-              _InfoRow('Código Postal', child.addressPostalCode!),
+            _InfoRow('Endereço', child.fullAddress!),
           ],
         ],
       ),

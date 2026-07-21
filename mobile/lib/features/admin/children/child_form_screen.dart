@@ -22,16 +22,31 @@ class ChildFormScreen extends ConsumerStatefulWidget {
 class _ChildFormScreenState extends ConsumerState<ChildFormScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  // Controllers
+  // Identity
   final _firstNameCtrl = TextEditingController();
   final _middleNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
   final _cedulaCtrl = TextEditingController();
+  final _placeOfBirthCtrl = TextEditingController();
+  final _nationalityCtrl = TextEditingController();
+  final _heightCtrl = TextEditingController();
+
+  // Health
   final _specialNeedsCtrl = TextEditingController();
   final _medicalCtrl = TextEditingController();
-  final _addressCtrl = TextEditingController();
+
+  // Address
+  final _streetCtrl = TextEditingController();
+  final _houseNumberCtrl = TextEditingController();
+  final _buildingCtrl = TextEditingController();
+  final _aptCtrl = TextEditingController();
   final _cityCtrl = TextEditingController();
-  final _postalCtrl = TextEditingController();
+  final _municipioCtrl = TextEditingController();
+  final _bairroCtrl = TextEditingController();
+
+  // Emergency contact
+  final _emergencyNameCtrl = TextEditingController();
+  final _emergencyPhoneCtrl = TextEditingController();
 
   DateTime? _birthDate;
   String? _sex;
@@ -39,15 +54,14 @@ class _ChildFormScreenState extends ConsumerState<ChildFormScreen> {
   bool _isLoadingChild = false;
   String? _error;
   bool _addressExpanded = false;
+  bool _emergencyExpanded = false;
 
   bool get isEditing => widget.childId != null;
 
   @override
   void initState() {
     super.initState();
-    if (isEditing) {
-      _loadChild();
-    }
+    if (isEditing) _loadChild();
   }
 
   Future<void> _loadChild() async {
@@ -60,15 +74,26 @@ class _ChildFormScreenState extends ConsumerState<ChildFormScreen> {
       _middleNameCtrl.text = child.middleName ?? '';
       _lastNameCtrl.text = child.lastName;
       _cedulaCtrl.text = child.cedula;
+      _placeOfBirthCtrl.text = child.placeOfBirth ?? '';
+      _nationalityCtrl.text = child.nationality ?? '';
+      _heightCtrl.text = child.height != null ? child.height.toString() : '';
       _specialNeedsCtrl.text = child.specialNeeds ?? '';
       _medicalCtrl.text = child.medicalPrescription ?? '';
-      _addressCtrl.text = child.address ?? '';
-      _cityCtrl.text = child.addressCity ?? '';
-      _postalCtrl.text = child.addressPostalCode ?? '';
+      _streetCtrl.text = child.street ?? '';
+      _houseNumberCtrl.text = child.houseNumber ?? '';
+      _buildingCtrl.text = child.buildingNumber ?? '';
+      _aptCtrl.text = child.aptNumber ?? '';
+      _cityCtrl.text = child.city ?? '';
+      _municipioCtrl.text = child.municipio ?? '';
+      _bairroCtrl.text = child.bairro ?? '';
+      _emergencyNameCtrl.text = child.emergencyContactName ?? '';
+      _emergencyPhoneCtrl.text = child.emergencyContactPhone ?? '';
       setState(() {
         _birthDate = child.birthDate;
         _sex = child.sex;
         _isLoadingChild = false;
+        _addressExpanded = child.street != null && child.street!.isNotEmpty;
+        _emergencyExpanded = child.emergencyContactName != null && child.emergencyContactName!.isNotEmpty;
       });
     } catch (e) {
       setState(() {
@@ -86,9 +111,7 @@ class _ChildFormScreenState extends ConsumerState<ChildFormScreen> {
       lastDate: DateTime.now(),
       locale: const Locale('pt', 'PT'),
     );
-    if (picked != null) {
-      setState(() => _birthDate = picked);
-    }
+    if (picked != null) setState(() => _birthDate = picked);
   }
 
   Future<void> _submit() async {
@@ -103,29 +126,28 @@ class _ChildFormScreenState extends ConsumerState<ChildFormScreen> {
       'last_name': _lastNameCtrl.text.trim(),
       'cedula': _cedulaCtrl.text.trim(),
     };
-    if (_middleNameCtrl.text.trim().isNotEmpty) {
-      body['middle_name'] = _middleNameCtrl.text.trim();
-    }
+    if (_middleNameCtrl.text.trim().isNotEmpty) body['middle_name'] = _middleNameCtrl.text.trim();
     if (_birthDate != null) {
       body['birth_date'] =
           '${_birthDate!.year.toString().padLeft(4, '0')}-${_birthDate!.month.toString().padLeft(2, '0')}-${_birthDate!.day.toString().padLeft(2, '0')}';
     }
     if (_sex != null) body['sex'] = _sex;
-    if (_specialNeedsCtrl.text.trim().isNotEmpty) {
-      body['special_needs'] = _specialNeedsCtrl.text.trim();
-    }
-    if (_medicalCtrl.text.trim().isNotEmpty) {
-      body['medical_prescription'] = _medicalCtrl.text.trim();
-    }
-    if (_addressCtrl.text.trim().isNotEmpty) {
-      body['address'] = _addressCtrl.text.trim();
-    }
-    if (_cityCtrl.text.trim().isNotEmpty) {
-      body['address_city'] = _cityCtrl.text.trim();
-    }
-    if (_postalCtrl.text.trim().isNotEmpty) {
-      body['address_postal_code'] = _postalCtrl.text.trim();
-    }
+    if (_placeOfBirthCtrl.text.trim().isNotEmpty) body['place_of_birth'] = _placeOfBirthCtrl.text.trim();
+    if (_nationalityCtrl.text.trim().isNotEmpty) body['nationality'] = _nationalityCtrl.text.trim();
+    if (_heightCtrl.text.trim().isNotEmpty) body['height'] = double.tryParse(_heightCtrl.text.trim());
+    if (_specialNeedsCtrl.text.trim().isNotEmpty) body['special_needs'] = _specialNeedsCtrl.text.trim();
+    if (_medicalCtrl.text.trim().isNotEmpty) body['medical_prescription'] = _medicalCtrl.text.trim();
+    // Address
+    if (_streetCtrl.text.trim().isNotEmpty) body['street'] = _streetCtrl.text.trim();
+    if (_houseNumberCtrl.text.trim().isNotEmpty) body['house_number'] = _houseNumberCtrl.text.trim();
+    if (_buildingCtrl.text.trim().isNotEmpty) body['building_number'] = _buildingCtrl.text.trim();
+    if (_aptCtrl.text.trim().isNotEmpty) body['apt_number'] = _aptCtrl.text.trim();
+    if (_cityCtrl.text.trim().isNotEmpty) body['city'] = _cityCtrl.text.trim();
+    if (_municipioCtrl.text.trim().isNotEmpty) body['municipio'] = _municipioCtrl.text.trim();
+    if (_bairroCtrl.text.trim().isNotEmpty) body['bairro'] = _bairroCtrl.text.trim();
+    // Emergency
+    if (_emergencyNameCtrl.text.trim().isNotEmpty) body['emergency_contact_name'] = _emergencyNameCtrl.text.trim();
+    if (_emergencyPhoneCtrl.text.trim().isNotEmpty) body['emergency_contact_phone'] = _emergencyPhoneCtrl.text.trim();
 
     try {
       final api = ref.read(apiClientProvider);
@@ -151,11 +173,20 @@ class _ChildFormScreenState extends ConsumerState<ChildFormScreen> {
     _middleNameCtrl.dispose();
     _lastNameCtrl.dispose();
     _cedulaCtrl.dispose();
+    _placeOfBirthCtrl.dispose();
+    _nationalityCtrl.dispose();
+    _heightCtrl.dispose();
     _specialNeedsCtrl.dispose();
     _medicalCtrl.dispose();
-    _addressCtrl.dispose();
+    _streetCtrl.dispose();
+    _houseNumberCtrl.dispose();
+    _buildingCtrl.dispose();
+    _aptCtrl.dispose();
     _cityCtrl.dispose();
-    _postalCtrl.dispose();
+    _municipioCtrl.dispose();
+    _bairroCtrl.dispose();
+    _emergencyNameCtrl.dispose();
+    _emergencyPhoneCtrl.dispose();
     super.dispose();
   }
 
@@ -163,16 +194,13 @@ class _ChildFormScreenState extends ConsumerState<ChildFormScreen> {
   Widget build(BuildContext context) {
     if (_isLoadingChild) {
       return Scaffold(
-        appBar: AppBar(
-            title: Text(isEditing ? 'Editar Criança' : 'Nova Criança')),
+        appBar: AppBar(title: Text(isEditing ? 'Editar Criança' : 'Nova Criança')),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(isEditing ? 'Editar Criança' : 'Nova Criança'),
-      ),
+      appBar: AppBar(title: Text(isEditing ? 'Editar Criança' : 'Nova Criança')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Form(
@@ -186,46 +214,31 @@ class _ChildFormScreenState extends ConsumerState<ChildFormScreen> {
               TextFormField(
                 controller: _firstNameCtrl,
                 textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(
-                  labelText: 'Primeiro Nome *',
-                  prefixIcon: Icon(Icons.person),
-                ),
-                validator: (v) =>
-                    v == null || v.trim().isEmpty ? 'Campo obrigatório' : null,
+                decoration: const InputDecoration(labelText: 'Primeiro Nome *', prefixIcon: Icon(Icons.person)),
+                validator: (v) => v == null || v.trim().isEmpty ? 'Campo obrigatório' : null,
               ),
               const SizedBox(height: 12),
 
               TextFormField(
                 controller: _middleNameCtrl,
                 textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(
-                  labelText: 'Nome do Meio',
-                  prefixIcon: Icon(Icons.person_outline),
-                ),
+                decoration: const InputDecoration(labelText: 'Nome do Meio', prefixIcon: Icon(Icons.person_outline)),
               ),
               const SizedBox(height: 12),
 
               TextFormField(
                 controller: _lastNameCtrl,
                 textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(
-                  labelText: 'Apelido *',
-                  prefixIcon: Icon(Icons.person),
-                ),
-                validator: (v) =>
-                    v == null || v.trim().isEmpty ? 'Campo obrigatório' : null,
+                decoration: const InputDecoration(labelText: 'Apelido *', prefixIcon: Icon(Icons.person)),
+                validator: (v) => v == null || v.trim().isEmpty ? 'Campo obrigatório' : null,
               ),
               const SizedBox(height: 12),
 
               TextFormField(
                 controller: _cedulaCtrl,
                 textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(
-                  labelText: 'Cédula / BI *',
-                  prefixIcon: Icon(Icons.badge),
-                ),
-                validator: (v) =>
-                    v == null || v.trim().isEmpty ? 'Campo obrigatório' : null,
+                decoration: const InputDecoration(labelText: 'Cédula / BI *', prefixIcon: Icon(Icons.badge)),
+                validator: (v) => v == null || v.trim().isEmpty ? 'Campo obrigatório' : null,
               ),
               const SizedBox(height: 16),
 
@@ -234,41 +247,52 @@ class _ChildFormScreenState extends ConsumerState<ChildFormScreen> {
                 onTap: _pickDate,
                 borderRadius: BorderRadius.circular(8),
                 child: InputDecorator(
-                  decoration: const InputDecoration(
-                    labelText: 'Data de Nascimento',
-                    prefixIcon: Icon(Icons.cake),
-                  ),
+                  decoration: const InputDecoration(labelText: 'Data de Nascimento', prefixIcon: Icon(Icons.cake)),
                   child: Text(
-                    _birthDate != null
-                        ? DateFormat('dd/MM/yyyy').format(_birthDate!)
-                        : 'Seleccionar data',
+                    _birthDate != null ? DateFormat('dd/MM/yyyy').format(_birthDate!) : 'Seleccionar data',
                     style: _birthDate == null
-                        ? TextStyle(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant)
+                        ? TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)
                         : null,
                   ),
                 ),
               ),
               const SizedBox(height: 12),
 
+              TextFormField(
+                controller: _placeOfBirthCtrl,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(labelText: 'Local de Nascimento', prefixIcon: Icon(Icons.place)),
+              ),
+              const SizedBox(height: 12),
+
               // Sex
               DropdownButtonFormField<String>(
                 value: _sex,
-                decoration: const InputDecoration(
-                  labelText: 'Sexo',
-                  prefixIcon: Icon(Icons.wc),
-                ),
+                decoration: const InputDecoration(labelText: 'Sexo', prefixIcon: Icon(Icons.wc)),
                 items: const [
                   DropdownMenuItem(value: 'M', child: Text('Masculino')),
                   DropdownMenuItem(value: 'F', child: Text('Feminino')),
                 ],
                 onChanged: (v) => setState(() => _sex = v),
               ),
+              const SizedBox(height: 12),
+
+              TextFormField(
+                controller: _nationalityCtrl,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(labelText: 'Nacionalidade', prefixIcon: Icon(Icons.flag)),
+              ),
               const SizedBox(height: 24),
 
               _sectionHeader(context, 'Saúde'),
+              const SizedBox(height: 12),
+
+              TextFormField(
+                controller: _heightCtrl,
+                textInputAction: TextInputAction.next,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Altura (cm)', prefixIcon: Icon(Icons.height)),
+              ),
               const SizedBox(height: 12),
 
               TextFormField(
@@ -293,18 +317,45 @@ class _ChildFormScreenState extends ConsumerState<ChildFormScreen> {
               ),
               const SizedBox(height: 24),
 
-              // Expandable address section
+              // Emergency contact
               InkWell(
-                onTap: () =>
-                    setState(() => _addressExpanded = !_addressExpanded),
+                onTap: () => setState(() => _emergencyExpanded = !_emergencyExpanded),
                 borderRadius: BorderRadius.circular(8),
                 child: Row(
                   children: [
-                    _sectionHeader(context, 'Morada', expand: false),
+                    _sectionHeader(context, 'Contacto de Emergência'),
                     const Spacer(),
-                    Icon(_addressExpanded
-                        ? Icons.expand_less
-                        : Icons.expand_more),
+                    Icon(_emergencyExpanded ? Icons.expand_less : Icons.expand_more),
+                  ],
+                ),
+              ),
+
+              if (_emergencyExpanded) ...[
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _emergencyNameCtrl,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(labelText: 'Nome', prefixIcon: Icon(Icons.person)),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _emergencyPhoneCtrl,
+                  textInputAction: TextInputAction.next,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(labelText: 'Telefone', prefixIcon: Icon(Icons.phone)),
+                ),
+              ],
+              const SizedBox(height: 24),
+
+              // Address
+              InkWell(
+                onTap: () => setState(() => _addressExpanded = !_addressExpanded),
+                borderRadius: BorderRadius.circular(8),
+                child: Row(
+                  children: [
+                    _sectionHeader(context, 'Morada'),
+                    const Spacer(),
+                    Icon(_addressExpanded ? Icons.expand_less : Icons.expand_more),
                   ],
                 ),
               ),
@@ -312,30 +363,63 @@ class _ChildFormScreenState extends ConsumerState<ChildFormScreen> {
               if (_addressExpanded) ...[
                 const SizedBox(height: 12),
                 TextFormField(
-                  controller: _addressCtrl,
+                  controller: _streetCtrl,
                   textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(
-                    labelText: 'Endereço',
-                    prefixIcon: Icon(Icons.home),
-                  ),
+                  decoration: const InputDecoration(labelText: 'Rua', prefixIcon: Icon(Icons.home)),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _houseNumberCtrl,
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(labelText: 'Nº Casa'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _buildingCtrl,
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(labelText: 'Prédio'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _aptCtrl,
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(labelText: 'Andar'),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
-                  controller: _cityCtrl,
+                  controller: _bairroCtrl,
                   textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(
-                    labelText: 'Cidade',
-                    prefixIcon: Icon(Icons.location_city),
-                  ),
+                  decoration: const InputDecoration(labelText: 'Bairro', prefixIcon: Icon(Icons.location_on)),
                 ),
                 const SizedBox(height: 12),
-                TextFormField(
-                  controller: _postalCtrl,
-                  textInputAction: TextInputAction.done,
-                  decoration: const InputDecoration(
-                    labelText: 'Código Postal',
-                    prefixIcon: Icon(Icons.local_post_office),
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _municipioCtrl,
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(labelText: 'Município'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _cityCtrl,
+                        textInputAction: TextInputAction.done,
+                        decoration: const InputDecoration(labelText: 'Cidade'),
+                      ),
+                    ),
+                  ],
                 ),
               ],
 
@@ -349,10 +433,7 @@ class _ChildFormScreenState extends ConsumerState<ChildFormScreen> {
                   ),
                   child: Text(
                     _error!,
-                    style: TextStyle(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onErrorContainer),
+                    style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer),
                   ),
                 ),
               ],
@@ -365,8 +446,7 @@ class _ChildFormScreenState extends ConsumerState<ChildFormScreen> {
                     ? const SizedBox(
                         height: 20,
                         width: 20,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
                     : Text(isEditing ? 'Guardar Alterações' : 'Criar Criança'),
               ),
@@ -378,7 +458,7 @@ class _ChildFormScreenState extends ConsumerState<ChildFormScreen> {
     );
   }
 
-  Widget _sectionHeader(BuildContext context, String text, {bool expand = true}) {
+  Widget _sectionHeader(BuildContext context, String text) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Text(

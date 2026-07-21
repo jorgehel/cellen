@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/auth/auth_provider.dart';
+import '../../core/auth/auth_state.dart';
 import '../../core/models/child.dart';
 import '../../core/theme/app_theme.dart';
 
@@ -161,24 +162,26 @@ class _HealthEventsScreenState extends ConsumerState<HealthEventsScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          final children = ref.read(childrenForHealthProvider).valueOrNull ?? [];
-          if (!mounted) return;
-          final created = await showDialog<bool>(
-            context: context,
-            builder: (ctx) => _CreateHealthEventDialog(
-              children: children,
-              preselectedChildId: _selectedChildId,
-            ),
-          );
-          if (created == true) {
-            ref.invalidate(healthEventsProvider(_selectedChildId));
-          }
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('Registar'),
-      ),
+      floatingActionButton: ref.watch(authProvider).role != UserRole.parent
+          ? FloatingActionButton.extended(
+              onPressed: () async {
+                final children = ref.read(childrenForHealthProvider).valueOrNull ?? [];
+                if (!mounted) return;
+                final created = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => _CreateHealthEventDialog(
+                    children: children,
+                    preselectedChildId: _selectedChildId,
+                  ),
+                );
+                if (created == true) {
+                  ref.invalidate(healthEventsProvider(_selectedChildId));
+                }
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('Registar'),
+            )
+          : null,
     );
   }
 }

@@ -31,6 +31,43 @@ class EmployeesListScreen extends ConsumerStatefulWidget {
 class _EmployeesListScreenState extends ConsumerState<EmployeesListScreen> {
   String _filter = 'all'; // all, teacher, staff, admin
 
+  Future<void> _deactivateEmployee(Employee emp) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Desactivar Funcionário'),
+        content: Text('Tem a certeza que pretende desactivar ${emp.fullName}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Desactivar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await ref.read(apiClientProvider).delete('/employees/${emp.id}');
+      ref.invalidate(employeesProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${emp.fullName} desactivado')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final employeesAsync = ref.watch(employeesProvider);
@@ -145,7 +182,10 @@ class _EmployeesListScreenState extends ConsumerState<EmployeesListScreen> {
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final emp = filtered[index];
-                      return _EmployeeTile(employee: emp);
+                      return _EmployeeTile(
+                        employee: emp,
+                        onDeactivate: () => _deactivateEmployee(emp),
+                      );
                     },
                   ),
                 );
@@ -183,7 +223,8 @@ class _FilterChip extends StatelessWidget {
 
 class _EmployeeTile extends StatelessWidget {
   final Employee employee;
-  const _EmployeeTile({required this.employee});
+  final VoidCallback? onDeactivate;
+  const _EmployeeTile({required this.employee, this.onDeactivate});
 
   @override
   Widget build(BuildContext context) {
@@ -219,6 +260,24 @@ class _EmployeeTile extends StatelessWidget {
                 ),
                 child: const Text('Inactivo',
                     style: TextStyle(fontSize: 11, color: Colors.grey)),
+              ),
+            if (employee.isActive && onDeactivate != null)
+              PopupMenuButton<String>(
+                onSelected: (v) {
+                  if (v == 'deactivate') onDeactivate!();
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
+                    value: 'deactivate',
+                    child: Row(
+                      children: [
+                        Icon(Icons.person_off, size: 18, color: Colors.red),
+                        SizedBox(width: 8),
+                        Text('Desactivar'),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             const Icon(Icons.chevron_right),
           ],

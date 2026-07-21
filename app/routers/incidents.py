@@ -132,6 +132,20 @@ async def create_incident(
         action_taken=body.action_taken,
     )
     db.add(incident)
+    await db.flush()
+
+    # Notify parents for serious incidents
+    if body.severity == "serious":
+        from app.services.notifications import notify_parents_of_child
+        await notify_parents_of_child(
+            db, school_id, body.child_id,
+            notif_type="incident",
+            title="Ocorrência Grave",
+            body=f"Foi registada uma ocorrência grave relativa ao seu filho: {body.description[:100]}",
+            related_id=incident.id,
+            related_type="incident",
+        )
+
     await db.commit()
     await db.refresh(incident)
     return incident

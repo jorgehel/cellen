@@ -143,6 +143,42 @@ async def create_trip_authorization(
         target_turma_id=body.target_turma_id,
     )
     db.add(trip)
+    await db.flush()
+
+    # Notify parents of the child (or all parents if no specific child)
+    if body.child_id:
+        from app.services.notifications import notify_parents_of_child
+        await notify_parents_of_child(
+            db, school_id, body.child_id,
+            notif_type="trip_authorization",
+            title="Autorização de Visita",
+            body=f"Foi solicitada autorização para: {title}",
+            related_id=trip.id,
+            related_type="trip_authorization",
+        )
+    elif body.target_turma_id:
+        # Notify all parents of children enrolled in the target turma
+        from app.models.academic import Enrollment, Schedule
+        from app.services.notifications import notify_parents_of_child
+        child_result = await db.execute(
+            select(Enrollment.child_id)
+            .join(Schedule, Schedule.id == Enrollment.schedule_id)
+            .where(
+                Schedule.turma_id == body.target_turma_id,
+                Enrollment.school_id == school_id,
+                Enrollment.status == "active",
+            )
+        )
+        for row in child_result.all():
+            await notify_parents_of_child(
+                db, school_id, row[0],
+                notif_type="trip_authorization",
+                title="Autorização de Visita",
+                body=f"Foi solicitada autorização para: {title}",
+                related_id=trip.id,
+                related_type="trip_authorization",
+            )
+
     await db.commit()
     await db.refresh(trip)
 

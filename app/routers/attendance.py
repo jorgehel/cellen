@@ -14,7 +14,7 @@ from app.core.dependencies import (
     require_school_admin,
     require_teacher,
 )
-from app.models.modern import Attendance, AttendanceLog
+from app.models.modern import Attendance, AttendanceDayStatus, AttendanceLog
 from app.models.person import Child, ChildGuardian
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
@@ -98,6 +98,40 @@ class ChildMonthlySummary(BaseModel):
     present: int
     present_days: int = 0  # alias for present (spec compliance)
     days_present: int = 0  # additional alias
+    absent: int
+    late: int
+    excused: int
+    total_days: int
+
+
+# ─── Day-Status Schemas ───────────────────────────────────────────────────────
+
+class DayStatusBody(BaseModel):
+    child_id: uuid.UUID
+    status_date: date
+    status: str  # present | absent | excused | late
+    notes: Optional[str] = None
+
+
+class DayStatusOut(BaseModel):
+    id: uuid.UUID
+    school_id: uuid.UUID
+    child_id: uuid.UUID
+    status_date: date
+    status: str
+    notes: Optional[str] = None
+    recorded_by: uuid.UUID
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class DayStatusMonthlySummary(BaseModel):
+    child_id: uuid.UUID
+    first_name: str
+    last_name: str
+    present: int
     absent: int
     late: int
     excused: int
@@ -466,6 +500,167 @@ async def attendance_summary(
             present=stats["present"],
             present_days=stats["present"],
             days_present=stats["present"],
+            absent=stats["absent"],
+            late=stats["late"],
+            excused=stats["excused"],
+            total_days=total,
+        ))
+
+    return summaries
+
+
+# ─── Day-Status Endpoints ─────────────────────────────────────────────────────
+
+VALID_DAY_STATUSES = {"present", "absent", "excused", "late"}
+
+
+@router.post("/day-status", response_model=DayStatusOut, status_code=status.HTTP_200_OK)
+async def set_day_status(
+    body: DayStatusBody,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_teacher),
+):
+    """Set or update the daily attendance status for a child (upsert)."""
+    if body.status not in VALID_DAY_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"status must be one of: {', '.join(sorted(VALID_DAY_STATUSES))}",
+        )
+
+    # Verify child belongs to school
+    child_result = await db.execute(
+        select(Child).where(Child.id == body.child_id, Child.school_id == school_id)
+    )
+    if child_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Child not found")
+
+    employee_id = getattr(current_user, "employee_id", None)
+    if employee_id is None:
+        raise HTTPException(status_code=400, detail="Current user has no associated employee record")
+
+    # Upsert: find existing record for this child+date or create new
+    result = await db.execute(
+        select(AttendanceDayStatus).where(
+            AttendanceDayStatus.school_id == school_id,
+            AttendanceDayStatus.child_id == body.child_id,
+            AttendanceDayStatus.status_date == body.status_date,
+        )
+    )
+    record = result.scalar_one_or_none()
+
+    if record:
+        record.status = body.status
+        record.notes = body.notes
+        record.recorded_by = employee_id
+    else:
+        record = AttendanceDayStatus(
+            school_id=school_id,
+            child_id=body.child_id,
+            status_date=body.status_date,
+            status=body.status,
+            notes=body.notes,
+            recorded_by=employee_id,
+        )
+        db.add(record)
+
+    await db.commit()
+    await db.refresh(record)
+    return record
+
+
+@router.get("/day-status", response_model=List[DayStatusOut])
+async def list_day_statuses(
+    child_id: Optional[uuid.UUID] = Query(default=None),
+    date_from: Optional[date] = Query(default=None),
+    date_to: Optional[date] = Query(default=None),
+    status_filter: Optional[str] = Query(default=None, alias="status"),
+    skip: int = 0,
+    limit: int = 100,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_teacher),
+):
+    """List daily attendance statuses with optional date range and child filter."""
+    query = select(AttendanceDayStatus).where(
+        AttendanceDayStatus.school_id == school_id,
+    )
+    if child_id is not None:
+        query = query.where(AttendanceDayStatus.child_id == child_id)
+    if date_from is not None:
+        query = query.where(AttendanceDayStatus.status_date >= date_from)
+    if date_to is not None:
+        query = query.where(AttendanceDayStatus.status_date <= date_to)
+    if status_filter is not None:
+        query = query.where(AttendanceDayStatus.status == status_filter)
+
+    query = query.order_by(
+        AttendanceDayStatus.status_date.desc(),
+        AttendanceDayStatus.child_id,
+    ).offset(skip).limit(limit)
+
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+@router.get("/day-status/summary", response_model=List[DayStatusMonthlySummary])
+async def day_status_summary(
+    month: str,  # YYYY-MM
+    child_id: Optional[uuid.UUID] = Query(default=None),
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_teacher),
+):
+    """Monthly summary based on AttendanceDayStatus records."""
+    import calendar
+    from collections import defaultdict
+
+    try:
+        year_int, month_int = int(month[:4]), int(month[5:7])
+    except (ValueError, IndexError):
+        raise HTTPException(status_code=400, detail="month must be in YYYY-MM format")
+
+    from_date = date(year_int, month_int, 1)
+    last_day = calendar.monthrange(year_int, month_int)[1]
+    to_date = date(year_int, month_int, last_day)
+
+    query = select(AttendanceDayStatus).where(
+        AttendanceDayStatus.school_id == school_id,
+        AttendanceDayStatus.status_date >= from_date,
+        AttendanceDayStatus.status_date <= to_date,
+    )
+    if child_id is not None:
+        query = query.where(AttendanceDayStatus.child_id == child_id)
+
+    result = await db.execute(query)
+    records = result.scalars().all()
+
+    child_stats: dict = defaultdict(lambda: {"present": 0, "absent": 0, "late": 0, "excused": 0})
+    child_ids_seen = set()
+    for r in records:
+        child_ids_seen.add(r.child_id)
+        s = r.status if r.status in VALID_DAY_STATUSES else "present"
+        child_stats[r.child_id][s] += 1
+
+    if not child_ids_seen:
+        return []
+
+    children_result = await db.execute(
+        select(Child).where(Child.school_id == school_id, Child.id.in_(child_ids_seen))
+    )
+    children = {c.id: c for c in children_result.scalars().all()}
+
+    summaries = []
+    for cid, stats in child_stats.items():
+        child = children.get(cid)
+        if not child:
+            continue
+        total = sum(stats.values())
+        summaries.append(DayStatusMonthlySummary(
+            child_id=cid,
+            first_name=child.first_name,
+            last_name=child.last_name,
+            present=stats["present"],
             absent=stats["absent"],
             late=stats["late"],
             excused=stats["excused"],

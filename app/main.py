@@ -98,8 +98,14 @@ app.mount("/media", StaticFiles(directory=str(_media_path)), name="media")
 
 @app.on_event("startup")
 async def startup_event():
+    import asyncio
+    from app.services.scheduled_tasks import run_scheduled_tasks
+
     # Create platform admin if not exists
     await _seed_platform_admin()
+
+    # Launch daily scheduled tasks (overdue invoices, expire references)
+    asyncio.create_task(run_scheduled_tasks())
 
 
 async def _seed_platform_admin():

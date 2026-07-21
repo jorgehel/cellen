@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -168,6 +166,9 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
     );
     if (xFile == null) return;
 
+    // Read bytes upfront — Image.file is not supported on Flutter Web
+    final imageBytes = await xFile.readAsBytes();
+
     // Show caption dialog
     if (!mounted) return;
     final captionCtrl = TextEditingController();
@@ -185,8 +186,8 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                 // Preview
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: Image.file(
-                    File(xFile.path),
+                  child: Image.memory(
+                    imageBytes,
                     height: 150,
                     width: double.infinity,
                     fit: BoxFit.cover,

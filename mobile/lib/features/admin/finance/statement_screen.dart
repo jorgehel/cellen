@@ -219,6 +219,9 @@ class _StatementView extends StatelessWidget {
   }
 }
 
+double _toDouble(dynamic v) =>
+    v == null ? 0 : (v is num ? v.toDouble() : double.tryParse(v.toString()) ?? 0);
+
 class _MovementRow extends StatelessWidget {
   final Map<String, dynamic> movement;
   final NumberFormat currency;
@@ -229,9 +232,9 @@ class _MovementRow extends StatelessWidget {
     final type = movement['type'] as String? ?? '';
     final description = movement['description'] as String? ?? type;
     final date = movement['date'] as String? ?? '';
-    final debit = (movement['debit'] as num?)?.toDouble() ?? 0;
-    final credit = (movement['credit'] as num?)?.toDouble() ?? 0;
-    final runningBalance = (movement['running_balance'] as num?)?.toDouble();
+    final debit = _toDouble(movement['debit']);
+    final credit = _toDouble(movement['credit']);
+    final runningBalance = movement['running_balance'] != null ? _toDouble(movement['running_balance']) : null;
     final isDebit = debit > 0;
 
     return Container(

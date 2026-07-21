@@ -1,6 +1,8 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/api/api_client.dart';
@@ -81,6 +83,32 @@ class _EmployeeFormScreenState extends ConsumerState<EmployeeFormScreen> {
       lastDate: DateTime.now(),
     );
     if (picked != null) setState(() => _hireDate = picked);
+  }
+
+  Future<void> _uploadPhoto() async {
+    if (!isEditing) return;
+    final picker = ImagePicker();
+    final image = await picker.pickImage(source: ImageSource.gallery, maxWidth: 800);
+    if (image == null) return;
+    try {
+      final api = ref.read(apiClientProvider);
+      final formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(image.path, filename: image.name),
+      });
+      await api.post('/employees/${widget.employeeId}/photo', data: formData);
+      ref.invalidate(employeesProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Foto actualizada')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao enviar foto: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _submit() async {
@@ -172,6 +200,37 @@ class _EmployeeFormScreenState extends ConsumerState<EmployeeFormScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (isEditing) ...[
+                Center(
+                  child: GestureDetector(
+                    onTap: _uploadPhoto,
+                    child: Stack(
+                      children: [
+                        CircleAvatar(
+                          radius: 40,
+                          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                          child: Icon(Icons.person, size: 40,
+                              color: Theme.of(context).colorScheme.onPrimaryContainer),
+                        ),
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.primary,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(Icons.camera_alt, size: 16,
+                                color: Theme.of(context).colorScheme.onPrimary),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
               _sectionHeader(context, 'Dados Pessoais'),
               const SizedBox(height: 12),
 

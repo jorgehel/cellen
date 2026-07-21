@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -77,6 +77,14 @@ async def list_announcements(
         else:
             query = query.where(Announcement.target.in_(["all", "staff"]))
 
+    # Hide expired announcements (admins can still see them)
+    if role not in ("school_admin", "platform_admin"):
+        from sqlalchemy import or_
+        now = datetime.utcnow()
+        query = query.where(
+            or_(Announcement.expires_at.is_(None), Announcement.expires_at > now)
+        )
+
     result = await db.execute(
         query.order_by(Announcement.pinned.desc(), Announcement.created_at.desc())
         .offset(skip)
@@ -151,6 +159,40 @@ async def create_announcement(
         **body.model_dump(),
     )
     db.add(announcement)
+    await db.flush()
+
+    # Notify targeted users
+    from app.services.notifications import notify_users_by_role
+    target = body.target or "all"
+    if target == "all":
+        for role in ("school_admin", "teacher", "parent"):
+            await notify_users_by_role(
+                db, school_id, role,
+                notif_type="announcement",
+                title="Novo Comunicado",
+                body=body.title[:100],
+                related_id=announcement.id,
+                related_type="announcement",
+            )
+    elif target == "parents":
+        await notify_users_by_role(
+            db, school_id, "parent",
+            notif_type="announcement",
+            title="Novo Comunicado",
+            body=body.title[:100],
+            related_id=announcement.id,
+            related_type="announcement",
+        )
+    elif target in ("teachers", "staff"):
+        await notify_users_by_role(
+            db, school_id, "teacher",
+            notif_type="announcement",
+            title="Novo Comunicado",
+            body=body.title[:100],
+            related_id=announcement.id,
+            related_type="announcement",
+        )
+
     await db.commit()
     await db.refresh(announcement)
     return announcement

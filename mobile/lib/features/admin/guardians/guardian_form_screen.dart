@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../../core/api/api_client.dart';
 
@@ -25,6 +26,9 @@ class _GuardianFormScreenState extends ConsumerState<GuardianFormScreen> {
   final _professionCtrl = TextEditingController();
   final _qualificationsCtrl = TextEditingController();
   final _idCardCtrl = TextEditingController();
+  final _nifCtrl = TextEditingController();
+  final _placeOfBirthCtrl = TextEditingController();
+  final _nationalityCtrl = TextEditingController();
   final _mobileFirstCtrl = TextEditingController();
   final _mobileSecondCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
@@ -37,6 +41,7 @@ class _GuardianFormScreenState extends ConsumerState<GuardianFormScreen> {
   final _passwordCtrl = TextEditingController();
   String? _sex;
   String? _civilState;
+  DateTime? _birthDate;
   bool _obscurePassword = true;
 
   bool get _isEdit => widget.guardianId != null;
@@ -59,6 +64,10 @@ class _GuardianFormScreenState extends ConsumerState<GuardianFormScreen> {
       _professionCtrl.text = data['profession'] as String? ?? '';
       _qualificationsCtrl.text = data['qualifications'] as String? ?? '';
       _idCardCtrl.text = data['id_card_number'] as String? ?? '';
+      _nifCtrl.text = data['nif'] as String? ?? '';
+      _placeOfBirthCtrl.text = data['place_of_birth'] as String? ?? '';
+      _nationalityCtrl.text = data['nationality'] as String? ?? '';
+      _birthDate = data['birth_date'] != null ? DateTime.tryParse(data['birth_date'] as String) : null;
       _mobileFirstCtrl.text = data['mobile_first'] as String? ?? '';
       _mobileSecondCtrl.text = data['mobile_second'] as String? ?? '';
       _emailCtrl.text = data['email'] as String? ?? '';
@@ -80,7 +89,8 @@ class _GuardianFormScreenState extends ConsumerState<GuardianFormScreen> {
   void dispose() {
     for (final c in [
       _firstNameCtrl, _middleNameCtrl, _lastNameCtrl, _professionCtrl,
-      _qualificationsCtrl, _idCardCtrl, _mobileFirstCtrl, _mobileSecondCtrl,
+      _qualificationsCtrl, _idCardCtrl, _nifCtrl, _placeOfBirthCtrl,
+      _nationalityCtrl, _mobileFirstCtrl, _mobileSecondCtrl,
       _emailCtrl, _streetCtrl, _houseNumCtrl, _cityCtrl, _municipioCtrl,
       _bairroCtrl, _usernameCtrl, _passwordCtrl,
     ]) {
@@ -108,6 +118,14 @@ class _GuardianFormScreenState extends ConsumerState<GuardianFormScreen> {
           'qualifications': _qualificationsCtrl.text.trim(),
         if (_idCardCtrl.text.trim().isNotEmpty)
           'id_card_number': _idCardCtrl.text.trim(),
+        if (_nifCtrl.text.trim().isNotEmpty)
+          'nif': _nifCtrl.text.trim(),
+        if (_placeOfBirthCtrl.text.trim().isNotEmpty)
+          'place_of_birth': _placeOfBirthCtrl.text.trim(),
+        if (_nationalityCtrl.text.trim().isNotEmpty)
+          'nationality': _nationalityCtrl.text.trim(),
+        if (_birthDate != null)
+          'birth_date': '${_birthDate!.year.toString().padLeft(4, '0')}-${_birthDate!.month.toString().padLeft(2, '0')}-${_birthDate!.day.toString().padLeft(2, '0')}',
         if (_mobileFirstCtrl.text.trim().isNotEmpty)
           'mobile_first': _mobileFirstCtrl.text.trim(),
         if (_mobileSecondCtrl.text.trim().isNotEmpty)
@@ -201,6 +219,39 @@ class _GuardianFormScreenState extends ConsumerState<GuardianFormScreen> {
             _field(_lastNameCtrl, 'Apelido *', required: true),
             const SizedBox(height: 12),
 
+            InkWell(
+              onTap: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: _birthDate ?? DateTime(1985),
+                  firstDate: DateTime(1930),
+                  lastDate: DateTime.now(),
+                );
+                if (picked != null) setState(() => _birthDate = picked);
+              },
+              borderRadius: BorderRadius.circular(8),
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Data de Nascimento',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.cake),
+                ),
+                child: Text(
+                  _birthDate != null
+                      ? DateFormat('dd/MM/yyyy').format(_birthDate!)
+                      : 'Seleccionar data',
+                  style: _birthDate == null
+                      ? TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)
+                      : null,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _field(_placeOfBirthCtrl, 'Local de Nascimento'),
+            const SizedBox(height: 12),
+            _field(_nationalityCtrl, 'Nacionalidade'),
+            const SizedBox(height: 12),
+
             DropdownButtonFormField<String>(
               value: _sex,
               decoration: const InputDecoration(
@@ -235,6 +286,8 @@ class _GuardianFormScreenState extends ConsumerState<GuardianFormScreen> {
             ),
             const SizedBox(height: 12),
             _field(_idCardCtrl, 'Nº Bilhete de Identidade'),
+            const SizedBox(height: 12),
+            _field(_nifCtrl, 'NIF (Nº de Identificação Fiscal)'),
             const SizedBox(height: 12),
             _field(_professionCtrl, 'Profissão'),
             const SizedBox(height: 12),

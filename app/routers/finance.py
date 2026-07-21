@@ -1034,6 +1034,23 @@ async def create_payment(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_finance_access),
 ):
+    # Cash/check payments require an open cash session (auto-attach)
+    cash_session_id = None
+    if body.payment_method in ("cash", "check"):
+        open_session = await db.execute(
+            select(CashSession).where(
+                CashSession.school_id == school_id,
+                CashSession.status == "open",
+            )
+        )
+        session = open_session.scalar_one_or_none()
+        if session is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Não existe sessão de caixa aberta. Abra uma sessão antes de registar pagamentos em dinheiro ou cheque.",
+            )
+        cash_session_id = session.id
+
     intake = PaymentIntakeService(db, school_id)
     try:
         payment = await intake.intake(
@@ -1044,6 +1061,7 @@ async def create_payment(
             target_invoice_ids=body.target_invoice_ids,
             payment_reference_id=body.payment_reference_id,
             received_by=body.received_by or getattr(current_user, "employee_id", None),
+            cash_session_id=cash_session_id,
             idempotency_key=body.idempotency_key,
             notes=body.notes,
             receipt_proof_url=body.receipt_proof_url,
@@ -1442,6 +1460,244 @@ async def refund_credit(
     db.add(audit)
     await db.commit()
     return {"message": "Credit refunded", "refund_id": str(refund.id)}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CASH SESSIONS (20.14)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/cash-sessions", response_model=CashSessionResponse, status_code=201)
+async def open_cash_session(
+    body: CashSessionOpen,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_finance_access),
+):
+    """Open a new cash session. Only one open session per school at a time."""
+    # Check for an already-open session
+    existing = await db.execute(
+        select(CashSession).where(
+            CashSession.school_id == school_id,
+            CashSession.status == "open",
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=409,
+            detail="Já existe uma sessão de caixa aberta. Feche-a antes de abrir outra.",
+        )
+
+    session = CashSession(
+        school_id=school_id,
+        opened_by=getattr(current_user, "employee_id", current_user.id),
+        opened_at=now_luanda(),
+        opening_float=body.opening_float,
+        status="open",
+    )
+    db.add(session)
+
+    audit = FinanceAuditEntry(
+        school_id=school_id,
+        actor_id=getattr(current_user, "id", uuid.uuid4()),
+        entity_type="cash_session",
+        entity_id=session.id,
+        action="open",
+        after_snapshot={"opening_float": float(body.opening_float)},
+    )
+    db.add(audit)
+    await db.commit()
+    await db.refresh(session)
+    return session
+
+
+@router.get("/cash-sessions", response_model=list[CashSessionResponse])
+async def list_cash_sessions(
+    status_filter: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 50,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_finance_access),
+):
+    """List cash sessions, optionally filtered by status (open/closed)."""
+    query = select(CashSession).where(CashSession.school_id == school_id)
+    if status_filter:
+        query = query.where(CashSession.status == status_filter)
+    result = await db.execute(
+        query.order_by(CashSession.opened_at.desc()).offset(skip).limit(limit)
+    )
+    return result.scalars().all()
+
+
+@router.get("/cash-sessions/{session_id}", response_model=CashSessionResponse)
+async def get_cash_session(
+    session_id: uuid.UUID,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_finance_access),
+):
+    """Get a single cash session with its details."""
+    result = await db.execute(
+        select(CashSession).where(
+            CashSession.id == session_id,
+            CashSession.school_id == school_id,
+        )
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Sessão de caixa não encontrada.")
+    return session
+
+
+@router.post("/cash-sessions/{session_id}/close", response_model=CashSessionResponse)
+async def close_cash_session(
+    session_id: uuid.UUID,
+    body: CashSessionClose,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_finance_access),
+):
+    """
+    Close a cash session.
+
+    Requires counted amounts by method (e.g. {"cash": 1200.00, "transfer": 500.00}).
+    Computes expected totals from payments attached to this session, calculates
+    variance, and requires a reason if variance is non-zero.
+    """
+    result = await db.execute(
+        select(CashSession).where(
+            CashSession.id == session_id,
+            CashSession.school_id == school_id,
+        )
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Sessão de caixa não encontrada.")
+    if session.status != "open":
+        raise HTTPException(status_code=409, detail="Esta sessão já está fechada.")
+
+    # Compute expected totals by payment method from payments linked to this session
+    pay_result = await db.execute(
+        select(Payment.payment_method, func.sum(Payment.amount))
+        .where(
+            Payment.cash_session_id == session_id,
+            Payment.school_id == school_id,
+            Payment.status != "reversed",
+        )
+        .group_by(Payment.payment_method)
+    )
+    expected_by_method: dict = {}
+    for method, total in pay_result.all():
+        expected_by_method[method] = float(total)
+
+    # Add the opening float to expected cash
+    expected_by_method["cash"] = expected_by_method.get("cash", 0.0) + float(session.opening_float)
+
+    # Calculate totals and variance
+    expected_total = sum(expected_by_method.values())
+    counted_total = sum(float(v) for v in body.counted_by_method.values())
+    variance = round(counted_total - expected_total, 2)
+
+    if variance != 0 and not body.variance_reason:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Variância de {variance} detectada. É obrigatório justificar a diferença.",
+        )
+
+    session.closed_by = getattr(current_user, "employee_id", current_user.id)
+    session.closed_at = now_luanda()
+    session.expected_by_method = expected_by_method
+    session.counted_by_method = body.counted_by_method
+    session.variance = Decimal(str(variance))
+    session.variance_reason = body.variance_reason
+    session.status = "closed"
+
+    audit = FinanceAuditEntry(
+        school_id=school_id,
+        actor_id=getattr(current_user, "id", uuid.uuid4()),
+        entity_type="cash_session",
+        entity_id=session.id,
+        action="close",
+        after_snapshot={
+            "expected_by_method": expected_by_method,
+            "counted_by_method": body.counted_by_method,
+            "variance": variance,
+            "variance_reason": body.variance_reason,
+        },
+    )
+    db.add(audit)
+    await db.commit()
+    await db.refresh(session)
+    return session
+
+
+@router.post("/cash-sessions/{session_id}/reopen", response_model=CashSessionResponse)
+async def reopen_cash_session(
+    session_id: uuid.UUID,
+    reason: str,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_school_admin),
+):
+    """
+    Reopen a closed cash session. Only admin can do this.
+    A mandatory reason must be provided.
+    """
+    if not reason or not reason.strip():
+        raise HTTPException(status_code=422, detail="É obrigatório indicar o motivo da reabertura.")
+
+    # Ensure no other session is currently open
+    existing_open = await db.execute(
+        select(CashSession).where(
+            CashSession.school_id == school_id,
+            CashSession.status == "open",
+        )
+    )
+    if existing_open.scalar_one_or_none():
+        raise HTTPException(
+            status_code=409,
+            detail="Já existe uma sessão de caixa aberta. Feche-a antes de reabrir outra.",
+        )
+
+    result = await db.execute(
+        select(CashSession).where(
+            CashSession.id == session_id,
+            CashSession.school_id == school_id,
+        )
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Sessão de caixa não encontrada.")
+    if session.status != "closed":
+        raise HTTPException(status_code=409, detail="Apenas sessões fechadas podem ser reabertas.")
+
+    before = {
+        "status": session.status,
+        "closed_at": session.closed_at.isoformat() if session.closed_at else None,
+        "variance": float(session.variance) if session.variance else None,
+    }
+
+    session.status = "open"
+    session.closed_by = None
+    session.closed_at = None
+    session.expected_by_method = None
+    session.counted_by_method = None
+    session.variance = None
+    session.variance_reason = None
+
+    audit = FinanceAuditEntry(
+        school_id=school_id,
+        actor_id=getattr(current_user, "id", uuid.uuid4()),
+        entity_type="cash_session",
+        entity_id=session.id,
+        action="reopen",
+        before_snapshot=before,
+        reason=reason.strip(),
+    )
+    db.add(audit)
+    await db.commit()
+    await db.refresh(session)
+    return session
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

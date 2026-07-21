@@ -135,6 +135,20 @@ async def create_health_event(
         **body.model_dump(),
     )
     db.add(event)
+    await db.flush()
+
+    # Notify parents if parent_notified flag is set
+    if getattr(body, 'parent_notified', False):
+        from app.services.notifications import notify_parents_of_child
+        await notify_parents_of_child(
+            db, school_id, body.child_id,
+            notif_type="health_event",
+            title="Registo de Saúde",
+            body=f"Foi registado um evento de saúde relativo ao seu filho: {body.event_type}",
+            related_id=event.id,
+            related_type="health_event",
+        )
+
     await db.commit()
     await db.refresh(event)
     return event

@@ -83,6 +83,11 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: 'Histórico',
+            onPressed: () => context.push('/teacher/attendance/history'),
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Actualizar',
             onPressed: () => ref.invalidate(attendanceTodayProvider),

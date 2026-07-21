@@ -130,6 +130,25 @@ async def create_appointment(
         **body.model_dump(),
     )
     db.add(appointment)
+    await db.flush()
+
+    # Notify the target employee about the new appointment request
+    from app.models.user import User
+    from app.services.notifications import notify_user
+    emp_user_result = await db.execute(
+        select(User.id).where(User.employee_id == body.employee_id, User.is_active.is_(True))
+    )
+    emp_user = emp_user_result.scalar_one_or_none()
+    if emp_user:
+        await notify_user(
+            db, school_id, emp_user,
+            notif_type="appointment",
+            title="Novo Pedido de Reunião",
+            body=f"Pedido de reunião: {body.title}",
+            related_id=appointment.id,
+            related_type="appointment",
+        )
+
     await db.commit()
     await db.refresh(appointment)
     return appointment
@@ -190,6 +209,18 @@ async def respond_to_appointment(
         appointment.confirmed_time = body.confirmed_time
     if body.response_notes:
         appointment.response_notes = body.response_notes
+
+    # Notify the parent who requested the appointment
+    from app.services.notifications import notify_user
+    status_label = "confirmada" if body.status == "confirmed" else "recusada"
+    await notify_user(
+        db, school_id, appointment.requested_by,
+        notif_type="appointment",
+        title="Reunião " + status_label.capitalize(),
+        body=f"A sua reunião \"{appointment.title}\" foi {status_label}.",
+        related_id=appointment.id,
+        related_type="appointment",
+    )
 
     await db.commit()
     await db.refresh(appointment)

@@ -531,6 +531,7 @@ _QuickChip(icon: Icons.savings_outlined, label: 'Créditos', onTap: () => contex
               _QuickChip(icon: Icons.inventory_outlined, label: 'Itens Faturáveis', onTap: () => context.go('/admin/finance/billing-items')),
               _QuickChip(icon: Icons.qr_code_outlined, label: 'Ref. Multicaixa', onTap: () => context.go('/admin/finance/payment-references')),
               _QuickChip(icon: Icons.manage_search_outlined, label: 'Auditoria', onTap: () => context.go('/admin/finance/audit-log')),
+              _QuickChip(icon: Icons.point_of_sale, label: 'Sessões de Caixa', onTap: () => context.go('/admin/finance/cash-sessions')),
             ],
           ),
 

@@ -65,6 +65,39 @@ class AttendanceLog(Base):
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class AttendanceDayStatus(Base):
+    """Daily attendance status for a child (present/absent/excused/late).
+
+    Teachers can mark children without creating a check-in/check-out log entry.
+    Monthly summaries should be based on these records.
+    """
+    __tablename__ = "attendance_day_statuses"
+    __table_args__ = (
+        UniqueConstraint("school_id", "child_id", "status_date", name="uq_day_status_school_child_date"),
+        Index("ix_attendance_day_statuses_school_id", "school_id"),
+        Index("ix_attendance_day_statuses_child_id", "child_id"),
+        Index("ix_attendance_day_statuses_status_date", "status_date"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    school_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("schools.id", ondelete="RESTRICT"), nullable=False
+    )
+    child_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("children.id", ondelete="RESTRICT"), nullable=False
+    )
+    status_date: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)  # present | absent | excused | late
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    recorded_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class MessageThread(Base):
     __tablename__ = "message_threads"
     __table_args__ = (

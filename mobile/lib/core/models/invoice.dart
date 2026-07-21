@@ -3,30 +3,46 @@ class Invoice {
   final String childId;
   final String? childName;
   final String? billingGuardianId;
+  final String documentType; // FT, FR, ND
   final DateTime invoiceDate;
   final DateTime referenceMonth;
   final String? description;
-  final double totalAmount;
+  final double totalAmount; // gross_total
+  final double netTotal;
+  final double ivaTotal;
   final String status; // pending, partially_paid, paid, cancelled, overdue
   final DateTime? dueDate;
   final String? fullDocumentNumber;
   final double balance;
   final double amountPaid;
+  final String? customerNif;
+  final String? customerName;
+  final bool isFinalConsumer;
+  final bool isVoid;
+  final DateTime? createdAt;
 
   const Invoice({
     required this.id,
     required this.childId,
     this.childName,
     this.billingGuardianId,
+    this.documentType = 'FT',
     required this.invoiceDate,
     required this.referenceMonth,
     this.description,
     required this.totalAmount,
+    this.netTotal = 0.0,
+    this.ivaTotal = 0.0,
     required this.status,
     this.dueDate,
     this.fullDocumentNumber,
     this.balance = 0.0,
     this.amountPaid = 0.0,
+    this.customerNif,
+    this.customerName,
+    this.isFinalConsumer = false,
+    this.isVoid = false,
+    this.createdAt,
   });
 
   bool get isPaid => status == 'paid';
@@ -58,6 +74,7 @@ class Invoice {
       childId: json['child_id']?.toString() ?? '',
       childName: json['child_name'] as String?,
       billingGuardianId: json['billing_guardian_id']?.toString(),
+      documentType: json['document_type'] as String? ?? 'FT',
       invoiceDate: json['invoice_date'] != null
           ? DateTime.tryParse(json['invoice_date'] as String) ?? DateTime.now()
           : DateTime.now(),
@@ -70,6 +87,8 @@ class Invoice {
       totalAmount: (json['gross_total'] as num?)?.toDouble() ??
           (json['total_amount'] as num?)?.toDouble() ??
           0.0,
+      netTotal: (json['net_total'] as num?)?.toDouble() ?? 0.0,
+      ivaTotal: (json['iva_total'] as num?)?.toDouble() ?? 0.0,
       status: json['status'] as String? ?? 'pending',
       dueDate: json['due_date'] != null
           ? DateTime.tryParse(json['due_date'] as String)
@@ -77,18 +96,28 @@ class Invoice {
       fullDocumentNumber: json['full_document_number'] as String?,
       balance: (json['balance'] as num?)?.toDouble() ?? 0.0,
       amountPaid: (json['amount_paid'] as num?)?.toDouble() ?? 0.0,
+      customerNif: json['customer_nif'] as String?,
+      customerName: json['customer_name'] as String?,
+      isFinalConsumer: json['is_final_consumer'] as bool? ?? false,
+      isVoid: json['is_void'] as bool? ?? false,
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at'] as String)
+          : null,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'child_id': childId,
+        'document_type': documentType,
         'invoice_date':
             '${invoiceDate.year.toString().padLeft(4, '0')}-${invoiceDate.month.toString().padLeft(2, '0')}-${invoiceDate.day.toString().padLeft(2, '0')}',
         'reference_month':
             '${referenceMonth.year.toString().padLeft(4, '0')}-${referenceMonth.month.toString().padLeft(2, '0')}-${referenceMonth.day.toString().padLeft(2, '0')}',
         if (description != null) 'description': description,
         'gross_total': totalAmount,
+        'net_total': netTotal,
+        'iva_total': ivaTotal,
         'status': status,
         if (dueDate != null)
           'due_date':

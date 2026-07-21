@@ -75,8 +75,11 @@ import '../../features/admin/food/food_hub_screen.dart';
 import '../../features/trip_authorizations/trip_authorizations_screen.dart';
 import '../../features/pickup/pickup_authorizations_screen.dart';
 import '../../features/pickup/meal_orders_screen.dart';
+import '../../features/admin/finance/cash_sessions_screen.dart';
+import '../../features/teacher/attendance/attendance_history_screen.dart';
 import '../../core/api/api_client.dart';
 import '../../core/providers/currency_provider.dart';
+import '../../features/notifications/notifications_screen.dart';
 
 // ---------------------------------------------------------------------------
 // Change Password Dialog
@@ -244,19 +247,23 @@ const _teacherItems = [
   SidebarItem(path: '/pickup-authorizations',        label: 'Levantamentos', icon: Icons.transfer_within_a_station_outlined,   selectedIcon: Icons.transfer_within_a_station),
   SidebarItem(path: '/meal-orders',                  label: 'Refeições',     icon: Icons.restaurant_menu_outlined,             selectedIcon: Icons.restaurant_menu),
   SidebarItem(path: '/appointments',                 label: 'Marcações',     icon: Icons.event_available_outlined,             selectedIcon: Icons.event_available),
+  SidebarItem(path: '/documents',                    label: 'Documentos',    icon: Icons.folder_outlined,                      selectedIcon: Icons.folder),
   SidebarItem(path: '/notifications',                label: 'Notificações',  icon: Icons.notifications_outlined,               selectedIcon: Icons.notifications),
 ];
 
 // Staff (educational assistant) — same access as teacher; finance is the cutoff
 const _staffItems = _teacherItems;
 
-// Parent — hub-based (7 top-level items)
+// Parent — 10 top-level items per SPEC §21
 const _parentItems = [
   SidebarItem(path: '/parent',                  label: 'Início',        icon: Icons.home_outlined,                   selectedIcon: Icons.home),
   SidebarItem(path: '/parent/children',         label: 'Os Meus Filhos', icon: Icons.child_care_outlined,            selectedIcon: Icons.child_care),
+  SidebarItem(path: '/parent/caderneta',        label: 'Caderneta',     icon: Icons.menu_book_outlined,              selectedIcon: Icons.menu_book),
   SidebarItem(path: '/parent/invoices',         label: 'Finanças',      icon: Icons.account_balance_wallet_outlined, selectedIcon: Icons.account_balance_wallet),
+  SidebarItem(path: '/health',                  label: 'Saúde',         icon: Icons.health_and_safety_outlined,      selectedIcon: Icons.health_and_safety),
   SidebarItem(path: '/parent/school',           label: 'Escola',        icon: Icons.school_outlined,                 selectedIcon: Icons.school),
   SidebarItem(path: '/messages',                label: 'Mensagens',     icon: Icons.chat_bubble_outline,             selectedIcon: Icons.chat_bubble),
+  SidebarItem(path: '/appointments',            label: 'Marcações',     icon: Icons.event_available_outlined,        selectedIcon: Icons.event_available),
   SidebarItem(path: '/parent/authorizations',   label: 'Autorizações',  icon: Icons.assignment_outlined,             selectedIcon: Icons.assignment),
   SidebarItem(path: '/notifications',           label: 'Notificações',  icon: Icons.notifications_outlined,          selectedIcon: Icons.notifications),
 ];
@@ -311,7 +318,9 @@ class _UnifiedShell extends ConsumerWidget {
     final currentPath = GoRouterState.of(context).uri.path;
     final school = ref.watch(schoolInfoProvider).valueOrNull;
 
-    final items = switch (auth.role) {
+    final unread = ref.watch(unreadNotifCountProvider).valueOrNull ?? 0;
+
+    final baseItems = switch (auth.role) {
       UserRole.platformAdmin => _platformItems,
       UserRole.schoolAdmin   => _adminItems,
       UserRole.teacher       => _teacherItems,
@@ -319,6 +328,19 @@ class _UnifiedShell extends ConsumerWidget {
       UserRole.parent        => _parentItems,
       null                   => const <SidebarItem>[],
     };
+
+    // Inject notification badge count into the Notificações item
+    final items = unread > 0
+        ? baseItems.map((item) => item.path == '/notifications'
+            ? SidebarItem(
+                path: item.path,
+                label: item.label,
+                icon: item.icon,
+                selectedIcon: item.selectedIcon,
+                badge: unread,
+              )
+            : item).toList()
+        : baseItems;
 
     return SidebarLayout(
       child: child,
@@ -469,10 +491,12 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/admin/finance/statement',          builder: (_, __) => const StatementScreen()),
           GoRoute(path: '/admin/finance/audit-log',          builder: (_, __) => const AuditLogScreen()),
           GoRoute(path: '/admin/finance/payment-references', builder: (_, __) => const PaymentReferencesScreen()),
+          GoRoute(path: '/admin/finance/cash-sessions',    builder: (_, __) => const CashSessionsScreen()),
 
           // ── Teacher / Staff ──────────────────────────────────────────────
           GoRoute(path: '/teacher',                    builder: (_, __) => const TeacherDashboardScreen()),
           GoRoute(path: '/teacher/attendance',         builder: (_, __) => const AttendanceScreen()),
+          GoRoute(path: '/teacher/attendance/history', builder: (_, __) => const AttendanceHistoryScreen()),
           GoRoute(path: '/teacher/caderneta',          builder: (_, __) => const CadernetaListScreen()),
           GoRoute(path: '/teacher/caderneta/new',      builder: (_, __) => const CadernetaFormScreen()),
           GoRoute(path: '/teacher/caderneta/:id/edit', builder: (_, s)  => CadernetaFormScreen(cadernetaId: s.pathParameters['id'])),
@@ -485,6 +509,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/parent/caderneta',           builder: (_, __) => const ChildCadernetaScreen()),
           GoRoute(path: '/parent/invoices',            builder: (_, __) => const ParentInvoicesScreen()),
           GoRoute(path: '/parent/menu',                builder: (_, __) => const FoodMenuScreen()),
+          GoRoute(path: '/parent/attendance',            builder: (_, __) => const AttendanceHistoryScreen()),
 
           // ── Shared routes (registered ONCE — shell picks correct nav) ────
           GoRoute(path: '/announcements',              builder: (_, __) => const AnnouncementsScreen()),

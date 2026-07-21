@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/auth/auth_provider.dart';
+import '../../core/auth/auth_state.dart';
 import '../../core/models/incident.dart';
 
 // ---------------------------------------------------------------------------
@@ -47,6 +49,8 @@ class _IncidentsScreenState extends ConsumerState<IncidentsScreen> {
   @override
   Widget build(BuildContext context) {
     final incidentsAsync = ref.watch(incidentsProvider);
+    final auth = ref.watch(authProvider);
+    final canCreate = auth.role != UserRole.parent;
 
     return Scaffold(
       appBar: AppBar(
@@ -58,11 +62,13 @@ class _IncidentsScreenState extends ConsumerState<IncidentsScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showCreateDialog,
-        icon: const Icon(Icons.add),
-        label: const Text('Nova Ocorrência'),
-      ),
+      floatingActionButton: canCreate
+          ? FloatingActionButton.extended(
+              onPressed: _showCreateDialog,
+              icon: const Icon(Icons.add),
+              label: const Text('Nova Ocorrência'),
+            )
+          : null,
       body: incidentsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => _ErrorView(

@@ -38,6 +38,20 @@ class ParentChildrenHubScreen extends StatelessWidget {
         description: 'Avaliações pedagógicas e boletim de desenvolvimento',
         path: '/evaluations',
       ),
+      (
+        icon: Icons.warning_amber_outlined,
+        color: Colors.orange,
+        label: 'Ocorrências',
+        description: 'Incidentes e ocorrências registadas',
+        path: '/incidents',
+      ),
+      (
+        icon: Icons.fact_check_outlined,
+        color: Colors.indigo,
+        label: 'Presenças',
+        description: 'Histórico de presenças e faltas',
+        path: '/parent/attendance',
+      ),
     ];
 
     return Scaffold(

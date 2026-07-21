@@ -430,6 +430,7 @@ class _CreateAnnouncementDialogState
   bool _pinned = false;
   bool _isLoading = false;
   String? _error;
+  DateTime? _expiryDate;
 
   @override
   void dispose() {
@@ -454,6 +455,8 @@ class _CreateAnnouncementDialogState
         'pinned': _pinned,
         if (_attachmentUrlCtrl.text.trim().isNotEmpty)
           'attachment_url': _attachmentUrlCtrl.text.trim(),
+        if (_expiryDate != null)
+          'expiry_date': _expiryDate!.toIso8601String().substring(0, 10),
       });
       if (mounted) Navigator.of(context).pop();
       widget.onCreated();
@@ -510,6 +513,37 @@ class _CreateAnnouncementDialogState
                   controller: _attachmentUrlCtrl,
                   decoration: const InputDecoration(
                       labelText: 'URL do Anexo (opcional)'),
+                ),
+                const SizedBox(height: 12),
+                InkWell(
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: _expiryDate ?? DateTime.now().add(const Duration(days: 30)),
+                      firstDate: DateTime.now(),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                    );
+                    if (picked != null) setState(() => _expiryDate = picked);
+                  },
+                  child: InputDecorator(
+                    decoration: InputDecoration(
+                      labelText: 'Data de Expiração (opcional)',
+                      suffixIcon: _expiryDate != null
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, size: 18),
+                              onPressed: () => setState(() => _expiryDate = null),
+                            )
+                          : const Icon(Icons.calendar_today, size: 18),
+                    ),
+                    child: Text(
+                      _expiryDate != null
+                          ? '${_expiryDate!.day.toString().padLeft(2, '0')}/${_expiryDate!.month.toString().padLeft(2, '0')}/${_expiryDate!.year}'
+                          : 'Sem data de expiração',
+                      style: TextStyle(
+                        color: _expiryDate != null ? null : Colors.grey,
+                      ),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 SwitchListTile(

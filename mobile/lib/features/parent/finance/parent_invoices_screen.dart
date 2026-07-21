@@ -523,9 +523,10 @@ class _StatementTab extends ConsumerWidget {
                   final type = m['type'] as String? ?? '';
                   final desc = m['description'] as String? ?? type;
                   final date = m['date'] as String? ?? '';
-                  final debit = (m['debit'] as num?)?.toDouble() ?? 0;
-                  final credit = (m['credit'] as num?)?.toDouble() ?? 0;
-                  final runningBalance = (m['running_balance'] as num?)?.toDouble();
+                  double _safeNum(dynamic v) => v == null ? 0 : (v is num ? v.toDouble() : double.tryParse(v.toString()) ?? 0);
+                  final debit = _safeNum(m['debit']);
+                  final credit = _safeNum(m['credit']);
+                  final runningBalance = m['running_balance'] != null ? _safeNum(m['running_balance']) : null;
                   final isDebit = debit > 0;
                   return Container(
                     margin: const EdgeInsets.only(bottom: 4),

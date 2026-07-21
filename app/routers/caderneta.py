@@ -56,6 +56,19 @@ async def create_caderneta(
 
     caderneta = Caderneta(school_id=school_id, **body.model_dump())
     db.add(caderneta)
+    await db.flush()
+
+    # Notify parents of this child
+    from app.services.notifications import notify_parents_of_child
+    await notify_parents_of_child(
+        db, school_id, body.child_id,
+        notif_type="caderneta",
+        title="Nova Caderneta",
+        body="O educador registou o relatório diário do seu filho.",
+        related_id=caderneta.id,
+        related_type="caderneta",
+    )
+
     await db.commit()
     await db.refresh(caderneta)
     return caderneta
