@@ -610,13 +610,70 @@ async def create_enrollment(
                 detail="Active enrollment requires the child to have a primary-contact guardian",
             )
 
-    enrollment = Enrollment(school_id=school_id, **body.model_dump())
+    enrollment_fee = body.enrollment_fee
+    generate_invoice = body.generate_invoice
+    enrollment_data = body.model_dump(exclude={'generate_invoice'})
+    enrollment = Enrollment(school_id=school_id, **enrollment_data)
     db.add(enrollment)
     try:
-        await db.commit()
+        await db.flush()
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Child already has an active enrollment for this school year")
+
+    # Auto-create enrollment fee invoice
+    if enrollment_fee and enrollment_fee > 0 and generate_invoice:
+        try:
+            from decimal import Decimal
+            from app.models.person import ChildGuardian, Guardian
+            from app.services.finance import DocumentEmissionService
+            from app.utils.agt import today_luanda
+
+            grd_r = await db.execute(
+                select(ChildGuardian.guardian_id).where(
+                    ChildGuardian.child_id == body.child_id,
+                    ChildGuardian.is_primary_contact == True,
+                )
+            )
+            guardian_id = grd_r.scalar_one_or_none()
+
+            customer_nif = "999999999"
+            customer_name = "Consumidor Final"
+            is_final_consumer = True
+
+            if guardian_id:
+                g_r = await db.execute(select(Guardian).where(Guardian.id == guardian_id))
+                guardian = g_r.scalar_one_or_none()
+                if guardian:
+                    customer_name = f"{guardian.first_name} {guardian.last_name}"
+                    if guardian.nif:
+                        customer_nif = guardian.nif
+                        is_final_consumer = False
+
+            invoice_date = enrollment.enrollment_date or today_luanda()
+            emission = DocumentEmissionService(db, school_id)
+            invoice = await emission.emit_invoice(
+                document_type="FT",
+                invoice_date=invoice_date,
+                billing_guardian_id=guardian_id,
+                customer_nif=customer_nif,
+                customer_name=customer_name,
+                is_final_consumer=is_final_consumer,
+                lines=[{
+                    "description": "Taxa de Matrícula",
+                    "unit_price": float(enrollment_fee),
+                    "quantity": 1,
+                    "iva_rate": 0,
+                }],
+                child_id=body.child_id,
+                school_year_id=body.school_year_id,
+                description="Taxa de Matrícula",
+            )
+            enrollment.fee_invoice_id = invoice.id
+        except Exception:
+            pass  # Invoice creation is best-effort; enrollment itself succeeds
+
+    await db.commit()
     await db.refresh(enrollment)
     return enrollment
 

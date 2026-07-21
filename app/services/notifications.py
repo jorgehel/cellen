@@ -15,7 +15,7 @@ Usage in any router:
 import uuid
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import select  # noqa: F401 (also used in new helpers)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.modern import Notification
@@ -41,6 +41,27 @@ async def _get_parent_user_ids_for_child(
     return [row[0] for row in result.all()]
 
 
+async def _get_guardian_phones_for_child(
+    db: AsyncSession, school_id: uuid.UUID, child_id: uuid.UUID
+) -> list[str]:
+    """Return non-empty mobile numbers of all guardians linked to a child."""
+    result = await db.execute(
+        select(Guardian.mobile_first, Guardian.mobile_second)
+        .join(ChildGuardian, ChildGuardian.guardian_id == Guardian.id)
+        .where(
+            ChildGuardian.child_id == child_id,
+            ChildGuardian.school_id == school_id,
+        )
+    )
+    phones: list[str] = []
+    for row in result.all():
+        if row[0]:
+            phones.append(row[0])
+        if row[1]:
+            phones.append(row[1])
+    return phones
+
+
 async def notify_parents_of_child(
     db: AsyncSession,
     school_id: uuid.UUID,
@@ -52,8 +73,9 @@ async def notify_parents_of_child(
     related_id: Optional[uuid.UUID] = None,
     related_type: Optional[str] = None,
 ) -> int:
-    """Create a notification for every parent linked to a child.
-    Returns the number of notifications created."""
+    """Create an in-app notification for every parent linked to a child,
+    and send a WhatsApp message if the school has it enabled.
+    Returns the number of in-app notifications created."""
     user_ids = await _get_parent_user_ids_for_child(db, school_id, child_id)
     for uid in user_ids:
         db.add(Notification(
@@ -65,6 +87,30 @@ async def notify_parents_of_child(
             related_id=related_id,
             related_type=related_type,
         ))
+
+    # WhatsApp — fire-and-forget, best effort
+    try:
+        from app.models.school import School
+        from app.services.whatsapp import send_whatsapp_to_guardians
+
+        school_r = await db.execute(select(School).where(School.id == school_id))
+        school = school_r.scalar_one_or_none()
+        if school and school.wa_enabled:
+            phones = await _get_guardian_phones_for_child(db, school_id, child_id)
+            if phones:
+                wa_message = f"*{title}*\n{body}"
+                import asyncio
+                asyncio.create_task(
+                    send_whatsapp_to_guardians(
+                        phones,
+                        wa_message,
+                        phone_number_id=school.wa_phone_number_id or None,
+                        access_token=school.wa_access_token or None,
+                    )
+                )
+    except Exception:
+        pass  # WhatsApp is best-effort, never blocks the main flow
+
     return len(user_ids)
 
 

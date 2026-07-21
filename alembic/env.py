@@ -34,6 +34,7 @@ from app.models.finance import (  # noqa: F401
     PaymentReference, CreditEntry, CreditRefund, CashSession,
     PaymentPlan, PaymentPlanInstallment, ReminderLog, FinanceAuditEntry,
 )
+from app.models.grades import Subject, TurmaSubject, Mark  # noqa: F401
 from app.models.website import (  # noqa: F401
     WebsiteSetting, WebsitePage, WebsiteSection, WebsiteMedia,
     WebsiteContactSubmission,

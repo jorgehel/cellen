@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: str | None = None
     CONTACT_RECIPIENT_EMAIL: str | None = None
 
+    # WhatsApp Cloud API (Meta Business) — platform-level defaults
+    # Schools can override per-school via wa_phone_number_id / wa_access_token on their record
+    WHATSAPP_PHONE_NUMBER_ID: str | None = None
+    WHATSAPP_ACCESS_TOKEN: str | None = None
+
     model_config = SettingsConfigDict(env_file=".env")
 
 

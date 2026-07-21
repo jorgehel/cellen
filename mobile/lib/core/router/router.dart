@@ -78,6 +78,12 @@ import '../../features/pickup/meal_orders_screen.dart';
 import '../../features/admin/finance/cash_sessions_screen.dart';
 import '../../features/teacher/attendance/attendance_history_screen.dart';
 import '../../features/parent/food/parent_food_hub.dart';
+import '../../features/admin/reports/med_report_screen.dart';
+import '../../features/admin/academic/subjects_screen.dart';
+import '../../features/admin/academic/turma_subjects_screen.dart';
+import '../../features/admin/academic/report_cards_screen.dart';
+import '../../features/teacher/grades/grades_screen.dart';
+import '../../features/parent/grades/parent_grades_screen.dart';
 import '../../core/api/api_client.dart';
 import '../../core/providers/currency_provider.dart';
 import '../../features/notifications/notifications_screen.dart';
@@ -228,6 +234,7 @@ const _adminItems = [
   SidebarItem(path: '/admin/activities',    label: 'Actividades',   icon: Icons.category_outlined,               selectedIcon: Icons.category),
   SidebarItem(path: '/admin/food-hub',      label: 'Alimentação',   icon: Icons.restaurant_outlined,             selectedIcon: Icons.restaurant),
   SidebarItem(path: '/notifications',       label: 'Notificações',  icon: Icons.notifications_outlined,          selectedIcon: Icons.notifications),
+  SidebarItem(path: '/admin/reports/med',   label: 'Relatórios',    icon: Icons.bar_chart_outlined,              selectedIcon: Icons.bar_chart),
   SidebarItem(path: '/admin/school-settings', label: 'Configurações', icon: Icons.settings_outlined,             selectedIcon: Icons.settings),
 ];
 
@@ -236,6 +243,7 @@ const _teacherItems = [
   SidebarItem(path: '/teacher',                      label: 'Dashboard',     icon: Icons.dashboard_outlined,                   selectedIcon: Icons.dashboard),
   SidebarItem(path: '/teacher/attendance',           label: 'Presenças',     icon: Icons.fact_check_outlined,                  selectedIcon: Icons.fact_check),
   SidebarItem(path: '/teacher/caderneta',            label: 'Caderneta',     icon: Icons.menu_book_outlined,                   selectedIcon: Icons.menu_book),
+  SidebarItem(path: '/teacher/grades',               label: 'Notas',         icon: Icons.grade_outlined,                       selectedIcon: Icons.grade),
   SidebarItem(path: '/health',                       label: 'Saúde',         icon: Icons.health_and_safety_outlined,           selectedIcon: Icons.health_and_safety),
   SidebarItem(path: '/health/immunizations',         label: 'Vacinas',       icon: Icons.vaccines_outlined,                    selectedIcon: Icons.vaccines),
   SidebarItem(path: '/incidents',                    label: 'Ocorrências',   icon: Icons.report_outlined,                      selectedIcon: Icons.report),
@@ -494,11 +502,16 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/admin/finance/audit-log',          builder: (_, __) => const AuditLogScreen()),
           GoRoute(path: '/admin/finance/payment-references', builder: (_, __) => const PaymentReferencesScreen()),
           GoRoute(path: '/admin/finance/cash-sessions',    builder: (_, __) => const CashSessionsScreen()),
+          GoRoute(path: '/admin/reports/med',             builder: (_, __) => const MedReportScreen()),
+          GoRoute(path: '/admin/academic/subjects',       builder: (_, __) => const SubjectsScreen()),
+          GoRoute(path: '/admin/academic/turma-subjects', builder: (_, __) => const TurmaSubjectsScreen()),
+          GoRoute(path: '/admin/academic/report-cards',   builder: (_, __) => const ReportCardsScreen()),
 
           // ── Teacher / Staff ──────────────────────────────────────────────
           GoRoute(path: '/teacher',                    builder: (_, __) => const TeacherDashboardScreen()),
           GoRoute(path: '/teacher/attendance',         builder: (_, __) => const AttendanceScreen()),
           GoRoute(path: '/teacher/attendance/history', builder: (_, __) => const AttendanceHistoryScreen()),
+          GoRoute(path: '/teacher/grades',             builder: (_, __) => const GradesScreen()),
           GoRoute(path: '/teacher/caderneta',          builder: (_, __) => const CadernetaListScreen()),
           GoRoute(path: '/teacher/caderneta/new',      builder: (_, __) => const CadernetaFormScreen()),
           GoRoute(path: '/teacher/caderneta/:id/edit', builder: (_, s)  => CadernetaFormScreen(cadernetaId: s.pathParameters['id'])),
@@ -513,6 +526,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/parent/food',                builder: (_, __) => const ParentFoodHubScreen()),
           GoRoute(path: '/parent/menu',                builder: (_, __) => const FoodMenuScreen()),
           GoRoute(path: '/parent/attendance',            builder: (_, __) => const AttendanceHistoryScreen()),
+          GoRoute(path: '/parent/grades',              builder: (_, __) => const ParentGradesScreen()),
 
           // ── Shared routes (registered ONCE — shell picks correct nav) ────
           GoRoute(path: '/announcements',              builder: (_, __) => const AnnouncementsScreen()),

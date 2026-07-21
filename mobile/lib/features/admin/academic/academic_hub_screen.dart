@@ -58,7 +58,27 @@ class AcademicHubScreen extends StatelessWidget {
         description: 'Avaliações pedagógicas e boletins de desenvolvimento',
         path: '/evaluations',
       ),
-
+      (
+        icon: Icons.book_outlined,
+        color: Colors.indigo,
+        label: 'Disciplinas',
+        description: 'Gestão das disciplinas lectivas da escola',
+        path: '/admin/academic/subjects',
+      ),
+      (
+        icon: Icons.assignment_outlined,
+        color: Colors.teal,
+        label: 'Pautas & Notas',
+        description: 'Atribuição de disciplinas a turmas e lançamento de notas',
+        path: '/admin/academic/turma-subjects',
+      ),
+      (
+        icon: Icons.grade_outlined,
+        color: Colors.green,
+        label: 'Boletins',
+        description: 'Consulta de boletins e médias por turma e aluno',
+        path: '/admin/academic/report-cards',
+      ),
     ];
 
     return Scaffold(

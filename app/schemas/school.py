@@ -36,6 +36,9 @@ class SchoolUpdate(BaseModel):
     currency: Optional[str] = None
     subscription_notes: Optional[str] = None
     subscription_started_at: Optional[datetime] = None
+    wa_enabled: Optional[bool] = None
+    wa_phone_number_id: Optional[str] = None
+    wa_access_token: Optional[str] = None
 
 
 class SchoolResponse(SchoolBase):
@@ -46,6 +49,9 @@ class SchoolResponse(SchoolBase):
     subscription_started_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    wa_enabled: bool = False
+    wa_phone_number_id: Optional[str] = None
+    # wa_access_token intentionally omitted from response for security
 
 
 class SchoolWithStats(SchoolResponse):

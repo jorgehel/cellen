@@ -1,9 +1,10 @@
 import uuid
 from datetime import date, datetime, time
+from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import (
-    Boolean, Date, DateTime, ForeignKey, Index, Integer, String, Time,
+    Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Time,
     UniqueConstraint, func
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -162,5 +163,9 @@ class Enrollment(Base):
         UUID(as_uuid=True), ForeignKey("school_years.id", ondelete="RESTRICT"), nullable=False
     )
     enrollment_date: Mapped[date] = mapped_column(Date, default=date.today)
-    status: Mapped[str] = mapped_column(String(20), default="active")  # active, withdrawn, graduated
+    status: Mapped[str] = mapped_column(String(20), default="active")  # active, pending, withdrawn, graduated
+    enrollment_fee: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), nullable=True)
+    fee_invoice_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("invoices.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

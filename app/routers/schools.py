@@ -99,6 +99,39 @@ async def update_my_school(
     return school
 
 
+@router.post("/me/whatsapp/test")
+async def test_whatsapp(
+    body: dict,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_school_admin),
+):
+    """Send a test WhatsApp message to verify configuration."""
+    from app.services.whatsapp import send_whatsapp
+
+    result = await db.execute(select(School).where(School.id == school_id))
+    school = result.scalar_one_or_none()
+    if school is None:
+        raise HTTPException(status_code=404, detail="School not found")
+
+    phone = body.get("phone")
+    if not phone:
+        raise HTTPException(status_code=422, detail="phone is required")
+
+    success = await send_whatsapp(
+        phone,
+        f"✅ Cellen — Teste de ligação WhatsApp para {school.name}. Configuração correcta!",
+        phone_number_id=school.wa_phone_number_id or None,
+        access_token=school.wa_access_token or None,
+    )
+    if not success:
+        raise HTTPException(
+            status_code=502,
+            detail="Mensagem não enviada. Verifique as credenciais e o número de telefone.",
+        )
+    return {"sent": True}
+
+
 @router.get("/me/stats")
 async def get_school_stats(
     school_id: uuid.UUID = Depends(get_school_id),

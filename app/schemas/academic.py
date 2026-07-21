@@ -1,5 +1,6 @@
 import uuid
 from datetime import date, datetime, time
+from decimal import Decimal
 from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict
@@ -156,7 +157,8 @@ class EnrollmentBase(BaseModel):
 
 
 class EnrollmentCreate(EnrollmentBase):
-    pass
+    enrollment_fee: Optional[Decimal] = None
+    generate_invoice: bool = True  # auto-create invoice when enrollment_fee > 0
 
 
 class EnrollmentUpdate(BaseModel):
@@ -172,3 +174,5 @@ class EnrollmentResponse(EnrollmentBase):
     child_name: Optional[str] = None
     turma_name: Optional[str] = None
     school_year: Optional[str] = None
+    enrollment_fee: Optional[Decimal] = None
+    fee_invoice_id: Optional[uuid.UUID] = None

@@ -52,6 +52,13 @@ class ParentChildrenHubScreen extends StatelessWidget {
         description: 'Histórico de presenças e faltas',
         path: '/parent/attendance',
       ),
+      (
+        icon: Icons.grade_outlined,
+        color: Colors.green,
+        label: 'Notas & Boletim',
+        description: 'Notas por disciplina e trimestre — boletim escolar',
+        path: '/parent/grades',
+      ),
     ];
 
     return Scaffold(

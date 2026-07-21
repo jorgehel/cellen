@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/models/school.dart';
 import '../../core/providers/currency_provider.dart';
 import '../../core/theme/app_theme.dart';
 
@@ -257,6 +258,13 @@ class _SchoolProfileScreenState extends ConsumerState<SchoolProfileScreen> {
                       schoolName: school.name,
                       logoUrl: school.logoUrl,
                     ),
+
+                    const SizedBox(height: 48),
+                    const Divider(),
+                    const SizedBox(height: 24),
+
+                    // ----- WhatsApp section -----
+                    _WhatsAppSection(school: school),
                   ],
                 ),
               ),
@@ -422,4 +430,176 @@ class _SidebarPreview extends StatelessWidget {
         ),
         child: const Icon(Icons.school_rounded, color: Colors.white, size: 14),
       );
+}
+
+// ---------------------------------------------------------------------------
+// WhatsApp Settings Section
+// ---------------------------------------------------------------------------
+class _WhatsAppSection extends ConsumerStatefulWidget {
+  final School school;
+  const _WhatsAppSection({required this.school});
+
+  @override
+  ConsumerState<_WhatsAppSection> createState() => _WhatsAppSectionState();
+}
+
+class _WhatsAppSectionState extends ConsumerState<_WhatsAppSection> {
+  late bool _waEnabled;
+  final _pidCtrl = TextEditingController();
+  final _tokenCtrl = TextEditingController();
+  final _testPhoneCtrl = TextEditingController();
+  bool _saving = false;
+  bool _testing = false;
+  String? _error;
+  String? _testResult;
+
+  @override
+  void initState() {
+    super.initState();
+    _waEnabled = widget.school.waEnabled;
+    _pidCtrl.text = widget.school.waPhoneNumberId ?? '';
+  }
+
+  @override
+  void dispose() {
+    _pidCtrl.dispose();
+    _tokenCtrl.dispose();
+    _testPhoneCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    setState(() { _saving = true; _error = null; _testResult = null; });
+    try {
+      final data = <String, dynamic>{
+        'wa_enabled': _waEnabled,
+        'wa_phone_number_id': _pidCtrl.text.trim().isEmpty ? null : _pidCtrl.text.trim(),
+      };
+      if (_tokenCtrl.text.trim().isNotEmpty) {
+        data['wa_access_token'] = _tokenCtrl.text.trim();
+      }
+      await ref.read(apiClientProvider).patch('/schools/me', data: data);
+      ref.invalidate(schoolInfoProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Configurações WhatsApp guardadas')),
+        );
+      }
+    } catch (e) {
+      setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _test() async {
+    final phone = _testPhoneCtrl.text.trim();
+    if (phone.isEmpty) {
+      setState(() => _error = 'Introduza um número para testar');
+      return;
+    }
+    setState(() { _testing = true; _error = null; _testResult = null; });
+    try {
+      await ref.read(apiClientProvider).post('/schools/me/whatsapp/test', data: {'phone': phone});
+      setState(() => _testResult = 'Mensagem enviada com sucesso!');
+    } catch (e) {
+      setState(() => _error = 'Falha ao enviar: $e');
+    } finally {
+      if (mounted) setState(() => _testing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.chat_outlined, color: Color(0xFF25D366), size: 22),
+            const SizedBox(width: 8),
+            Text(
+              'Notificações WhatsApp',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Integração com Meta WhatsApp Cloud API para enviar mensagens automáticas aos encarregados.',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.textSecondary),
+        ),
+        const SizedBox(height: 16),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Activar notificações WhatsApp'),
+          value: _waEnabled,
+          onChanged: (v) => setState(() => _waEnabled = v),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _pidCtrl,
+          decoration: const InputDecoration(
+            labelText: 'Phone Number ID (Meta)',
+            hintText: 'Ex: 123456789012345',
+            prefixIcon: Icon(Icons.tag),
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _tokenCtrl,
+          obscureText: true,
+          decoration: const InputDecoration(
+            labelText: 'Access Token (deixe em branco para manter)',
+            hintText: 'EAA...',
+            prefixIcon: Icon(Icons.key_outlined),
+          ),
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: 10),
+          Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 13)),
+        ],
+        if (_testResult != null) ...[
+          const SizedBox(height: 10),
+          Text(_testResult!, style: const TextStyle(color: Colors.green, fontSize: 13)),
+        ],
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: _saving ? null : _save,
+            child: _saving
+                ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Text('Guardar configurações WhatsApp'),
+          ),
+        ),
+        const SizedBox(height: 24),
+        Text('Testar configuração', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _testPhoneCtrl,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(
+                  labelText: 'Número de telefone',
+                  hintText: '923 456 789',
+                  prefixIcon: Icon(Icons.phone_outlined),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            FilledButton.tonal(
+              onPressed: _testing ? null : _test,
+              child: _testing
+                  ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Text('Testar'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 32),
+      ],
+    );
+  }
 }

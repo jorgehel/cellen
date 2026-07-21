@@ -14,7 +14,9 @@ class Enrollment {
   final String turmaId;
   final String turmaName;
   final String schoolYear;
-  final String status; // active, withdrawn, graduated, pending
+  final String status;
+  final double? enrollmentFee;
+  final String? feeInvoiceId;
 
   const Enrollment({
     required this.id,
@@ -24,7 +26,11 @@ class Enrollment {
     required this.turmaName,
     required this.schoolYear,
     required this.status,
+    this.enrollmentFee,
+    this.feeInvoiceId,
   });
+
+  bool get hasFee => enrollmentFee != null && enrollmentFee! > 0;
 
   String get statusLabel {
     switch (status) {
@@ -50,6 +56,10 @@ class Enrollment {
       turmaName: json['turma_name'] as String? ?? '',
       schoolYear: json['school_year'] as String? ?? '',
       status: json['status'] as String? ?? 'active',
+      enrollmentFee: json['enrollment_fee'] != null
+          ? double.tryParse(json['enrollment_fee'].toString())
+          : null,
+      feeInvoiceId: json['fee_invoice_id']?.toString(),
     );
   }
 }
@@ -195,8 +205,8 @@ class _EnrollmentsScreenState
                       columns: const [
                         DataColumn(label: Text('Criança')),
                         DataColumn(label: Text('Turma')),
-                        DataColumn(
-                            label: Text('Ano Lectivo')),
+                        DataColumn(label: Text('Ano Lectivo')),
+                        DataColumn(label: Text('Taxa Matrícula')),
                         DataColumn(label: Text('Estado')),
                       ],
                       rows: filtered.map((e) {
@@ -204,6 +214,12 @@ class _EnrollmentsScreenState
                           DataCell(Text(e.childName)),
                           DataCell(Text(e.turmaName)),
                           DataCell(Text(e.schoolYear)),
+                          DataCell(e.hasFee
+                              ? _FeeCell(
+                                  fee: e.enrollmentFee!,
+                                  hasInvoice: e.feeInvoiceId != null,
+                                )
+                              : const Text('—', style: TextStyle(color: Colors.grey))),
                           DataCell(_StatusChip(
                               status: e.status,
                               label: e.statusLabel)),
@@ -268,6 +284,7 @@ class _CreateEnrollmentSheetState
 
   bool _isLoading = false;
   String? _error;
+  final _feeCtrl = TextEditingController();
 
   static const _statusOptions = {
     'active': 'Activo',
@@ -280,6 +297,12 @@ class _CreateEnrollmentSheetState
   void initState() {
     super.initState();
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _feeCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -391,12 +414,17 @@ class _CreateEnrollmentSheetState
       final dateStr =
           '${_enrollmentDate.year.toString().padLeft(4, '0')}-${_enrollmentDate.month.toString().padLeft(2, '0')}-${_enrollmentDate.day.toString().padLeft(2, '0')}';
 
+      final feeText = _feeCtrl.text.trim();
+      final fee = feeText.isNotEmpty ? double.tryParse(feeText.replaceAll(',', '.')) : null;
+
       await api.post('/academic/enrollments', data: {
         'child_id': _selectedChildId,
         'schedule_id': _selectedScheduleId,
         'school_year_id': _selectedSchoolYearId,
         'enrollment_date': dateStr,
-        'status': _status,
+        'status': fee != null && fee > 0 ? 'pending' : _status,
+        if (fee != null && fee > 0) 'enrollment_fee': fee,
+        'generate_invoice': true,
       });
 
       widget.onCreated();
@@ -571,6 +599,43 @@ class _CreateEnrollmentSheetState
                             displayFmt.format(_enrollmentDate)),
                       ),
                     ),
+                    const SizedBox(height: 12),
+
+                    // Enrollment fee
+                    TextFormField(
+                      controller: _feeCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Taxa de Matrícula (AOA)',
+                        hintText: 'Deixar vazio se isento',
+                        prefixIcon: Icon(Icons.payments_outlined),
+                        suffixText: 'Kz',
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      onChanged: (_) => setState(() {}),
+                      validator: (v) {
+                        if (v != null && v.trim().isNotEmpty) {
+                          final parsed = double.tryParse(v.trim().replaceAll(',', '.'));
+                          if (parsed == null || parsed < 0) return 'Valor inválido';
+                        }
+                        return null;
+                      },
+                    ),
+                    if (_feeCtrl.text.trim().isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline, size: 14, color: Colors.blue),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Factura gerada automaticamente. Estado ficará Pendente até pagamento.',
+                                style: TextStyle(fontSize: 12, color: Colors.blue.shade700),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
 
                     if (_error != null) ...[
                       const SizedBox(height: 12),
@@ -599,6 +664,46 @@ class _CreateEnrollmentSheetState
                 ),
               ),
             ),
+    );
+  }
+}
+
+class _FeeCell extends StatelessWidget {
+  final double fee;
+  final bool hasInvoice;
+
+  const _FeeCell({required this.fee, required this.hasInvoice});
+
+  @override
+  Widget build(BuildContext context) {
+    final formatted = fee.toStringAsFixed(0).replaceAllMapped(
+          RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+          (m) => '${m[1]}.',
+        );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('$formatted Kz',
+            style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+        const SizedBox(width: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: hasInvoice
+                ? Colors.blue.withOpacity(0.1)
+                : Colors.orange.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            hasInvoice ? 'FT' : '—',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: hasInvoice ? Colors.blue.shade700 : Colors.orange.shade700,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

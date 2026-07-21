@@ -8,6 +8,8 @@ class School {
   final String? logoUrl;
   final String currency;
   final bool isActive;
+  final bool waEnabled;
+  final String? waPhoneNumberId;
 
   const School({
     required this.id,
@@ -19,6 +21,8 @@ class School {
     this.logoUrl,
     this.currency = 'AOA',
     required this.isActive,
+    this.waEnabled = false,
+    this.waPhoneNumberId,
   });
 
   factory School.fromJson(Map<String, dynamic> json) {
@@ -32,6 +36,8 @@ class School {
       logoUrl: json['logo_url'] as String?,
       currency: json['currency'] as String? ?? 'AOA',
       isActive: json['is_active'] as bool? ?? true,
+      waEnabled: json['wa_enabled'] as bool? ?? false,
+      waPhoneNumberId: json['wa_phone_number_id'] as String?,
     );
   }
 
