@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/models/food.dart';
+import '../../../core/widgets/app_error_widget.dart';
 
 // ---------------------------------------------------------------------------
 // Providers
@@ -70,20 +71,7 @@ class AdminFoodScreen extends ConsumerWidget {
       ),
       body: menusAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.error_outline, size: 48, color: Colors.red),
-              const SizedBox(height: 8),
-              Text(e.toString()),
-              TextButton(
-                onPressed: () => ref.invalidate(adminMenusProvider),
-                child: const Text('Tentar novamente'),
-              ),
-            ],
-          ),
-        ),
+        error: (e, _) => AppErrorWidget(error: e, onRetry: () => ref.invalidate(adminMenusProvider)),
         data: (menus) {
           if (menus.isEmpty) {
             return Center(

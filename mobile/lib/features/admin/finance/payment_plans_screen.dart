@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/currency_provider.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/app_error_widget.dart';
 
 final _paymentPlansProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   final api = ref.read(apiClientProvider);
@@ -41,15 +42,7 @@ class _PaymentPlansScreenState extends ConsumerState<PaymentPlansScreen> {
       ),
       body: plansAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.error_outline, size: 48, color: AppTheme.danger),
-            const SizedBox(height: 8),
-            Text(e.toString(), textAlign: TextAlign.center),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(onPressed: () => ref.invalidate(_paymentPlansProvider), icon: const Icon(Icons.refresh), label: const Text('Tentar novamente')),
-          ]),
-        ),
+        error: (e, _) => AppErrorWidget(error: e, onRetry: () => ref.invalidate(_paymentPlansProvider)),
         data: (plans) {
           final filtered = _filter == 'all' ? plans : plans.where((p) => p['status'] == _filter).toList();
           return Column(

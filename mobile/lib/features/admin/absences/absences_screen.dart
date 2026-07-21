@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/api/api_client.dart';
+import '../../../core/widgets/app_error_widget.dart';
 
 // ---------------------------------------------------------------------------
 // Data model
@@ -87,20 +88,7 @@ class AbsencesScreen extends ConsumerWidget {
       ),
       body: absencesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.error_outline, size: 48, color: Colors.red),
-              const SizedBox(height: 8),
-              Text(e.toString()),
-              TextButton(
-                onPressed: () => ref.invalidate(absencesProvider),
-                child: const Text('Tentar novamente'),
-              ),
-            ],
-          ),
-        ),
+        error: (e, _) => AppErrorWidget(error: e, onRetry: () => ref.invalidate(absencesProvider)),
         data: (absences) {
           if (absences.isEmpty) {
             return Center(

@@ -13,7 +13,9 @@ import '../../core/models/incident.dart';
 final incidentsProvider =
     FutureProvider.autoDispose<List<Incident>>((ref) async {
   final api = ref.read(apiClientProvider);
-  final data = await api.get('/incidents') as List;
+  final auth = ref.read(authProvider);
+  final path = auth.role == UserRole.parent ? '/incidents/mine' : '/incidents';
+  final data = await api.get(path) as List;
   return data
       .map((e) => Incident.fromJson(e as Map<String, dynamic>))
       .toList();

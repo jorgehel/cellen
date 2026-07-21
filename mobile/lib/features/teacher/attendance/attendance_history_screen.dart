@@ -141,6 +141,7 @@ class AttendanceHistoryScreen extends ConsumerStatefulWidget {
 class _AttendanceHistoryScreenState
     extends ConsumerState<AttendanceHistoryScreen> {
   String? _selectedChildId;
+  bool _childInitialized = false;
   DateTime _from = DateTime.now().subtract(const Duration(days: 30));
   DateTime _to = DateTime.now();
 
@@ -149,9 +150,25 @@ class _AttendanceHistoryScreenState
 
   @override
   Widget build(BuildContext context) {
+    final auth = ref.read(authProvider);
+    final isParent = auth.role == UserRole.parent;
     final historyAsync = ref.watch(_attendanceHistoryProvider(_query));
     final childrenAsync = ref.watch(_childrenPickerProvider);
     final dateFmt = DateFormat('dd/MM/yyyy');
+
+    // Auto-select first child for parents (they can't use "all children" endpoint)
+    childrenAsync.whenData((children) {
+      if (isParent && !_childInitialized && children.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _selectedChildId == null) {
+            setState(() {
+              _selectedChildId = children.first.id;
+              _childInitialized = true;
+            });
+          }
+        });
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(
@@ -185,10 +202,11 @@ class _AttendanceHistoryScreenState
                             EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       ),
                       items: [
-                        const DropdownMenuItem<String?>(
-                          value: null,
-                          child: Text('Todas as crianças'),
-                        ),
+                        if (!isParent)
+                          const DropdownMenuItem<String?>(
+                            value: null,
+                            child: Text('Todas as crianças'),
+                          ),
                         ...children.map((c) => DropdownMenuItem<String?>(
                               value: c.id,
                               child: Text(c.name),

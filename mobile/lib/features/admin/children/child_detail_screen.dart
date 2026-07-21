@@ -11,6 +11,7 @@ import '../../../core/models/child.dart';
 import '../../../core/models/guardian.dart';
 import '../../../core/models/invoice.dart';
 import '../../../core/providers/currency_provider.dart';
+import '../../../core/widgets/app_error_widget.dart';
 import 'children_list_screen.dart' show childrenProvider;
 
 // ---------------------------------------------------------------------------
@@ -95,20 +96,7 @@ class ChildDetailScreen extends ConsumerWidget {
       ),
       error: (e, _) => Scaffold(
         appBar: AppBar(title: const Text('Criança')),
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.error_outline, size: 48, color: Colors.red),
-              const SizedBox(height: 8),
-              Text(e.toString()),
-              TextButton(
-                onPressed: () => ref.invalidate(childProvider(id)),
-                child: const Text('Tentar novamente'),
-              ),
-            ],
-          ),
-        ),
+        body: AppErrorWidget(error: e, onRetry: () => ref.invalidate(childProvider(id))),
       ),
       data: (child) => _ChildDetailView(child: child),
     );
@@ -431,19 +419,7 @@ class _GuardiansTabState extends ConsumerState<_GuardiansTab> {
       ),
       body: guardiansAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Erro: $e'),
-              TextButton(
-                onPressed: () =>
-                    ref.invalidate(childGuardiansProvider(widget.childId)),
-                child: const Text('Tentar novamente'),
-              ),
-            ],
-          ),
-        ),
+        error: (e, _) => AppErrorWidget(error: e, onRetry: () => ref.invalidate(childGuardiansProvider(widget.childId))),
         data: (guardians) {
           if (guardians.isEmpty) {
             return Center(
@@ -531,7 +507,7 @@ class _CadernetaTab extends ConsumerWidget {
     final async = ref.watch(childCadernetasProvider(childId));
     return async.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Erro: $e')),
+      error: (e, _) => AppErrorWidget(error: e),
       data: (cadernetas) {
         if (cadernetas.isEmpty) {
           return const Center(
@@ -577,7 +553,7 @@ class _InvoicesTab extends ConsumerWidget {
 
     return async.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Erro: $e')),
+      error: (e, _) => AppErrorWidget(error: e),
       data: (invoices) {
         if (invoices.isEmpty) {
           return const Center(child: Text('Nenhuma factura encontrada'));
