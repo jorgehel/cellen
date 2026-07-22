@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/api_client.dart';
+import '../../../core/auth/auth_provider.dart';
+import '../../../core/auth/auth_state.dart';
 import '../../../core/theme/app_theme.dart';
 
 // ---------------------------------------------------------------------------
@@ -95,11 +97,25 @@ final _turmasProvider = FutureProvider.autoDispose<List<_Turma>>((ref) async {
   return data.map((e) => _Turma.fromJson(e as Map<String, dynamic>)).toList();
 });
 
-final _turmaSubjectsProvider =
-    FutureProvider.autoDispose.family<List<_TurmaSubject>, String>((ref, turmaId) async {
-  if (turmaId.isEmpty) return [];
+// For teachers: set of turma IDs where they have assigned subjects.
+final _teacherTurmaIdsProvider =
+    FutureProvider.autoDispose.family<Set<String>, String>((ref, teacherId) async {
   final api = ref.read(apiClientProvider);
-  final data = await api.get('/grades/turma-subjects?turma_id=$turmaId') as List;
+  final data = await api.get('/grades/turma-subjects?teacher_id=$teacherId') as List;
+  return data
+      .map((e) => (e as Map<String, dynamic>)['turma_id'] as String)
+      .toSet();
+});
+
+typedef _SubjectsKey = ({String turmaId, String? teacherId});
+
+final _turmaSubjectsProvider =
+    FutureProvider.autoDispose.family<List<_TurmaSubject>, _SubjectsKey>((ref, key) async {
+  if (key.turmaId.isEmpty) return [];
+  final api = ref.read(apiClientProvider);
+  var path = '/grades/turma-subjects?turma_id=${key.turmaId}';
+  if (key.teacherId != null) path += '&teacher_id=${key.teacherId}';
+  final data = await api.get(path) as List;
   return data.map((e) => _TurmaSubject.fromJson(e as Map<String, dynamic>)).toList();
 });
 
@@ -175,9 +191,26 @@ class _GradesScreenState extends ConsumerState<GradesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final turmasAsync = ref.watch(_turmasProvider);
+    final auth = ref.watch(authProvider);
+    final isTeacher = auth.hasRole(UserRole.teacher) && !auth.hasRole(UserRole.schoolAdmin);
+    final teacherId = isTeacher ? auth.employeeId : null;
+
+    final allTurmasAsync = ref.watch(_turmasProvider);
+    final teacherTurmaIdsAsync = teacherId != null
+        ? ref.watch(_teacherTurmaIdsProvider(teacherId))
+        : null;
+
+    // Filter turma list to only those the teacher teaches
+    final turmasAsync = teacherTurmaIdsAsync != null
+        ? allTurmasAsync.whenData((all) {
+            final ids = teacherTurmaIdsAsync.valueOrNull;
+            if (ids == null) return all;
+            return all.where((t) => ids.contains(t.id)).toList();
+          })
+        : allTurmasAsync;
+
     final subjectsAsync = _selectedTurma != null
-        ? ref.watch(_turmaSubjectsProvider(_selectedTurma!.id))
+        ? ref.watch(_turmaSubjectsProvider((turmaId: _selectedTurma!.id, teacherId: teacherId)))
         : null;
 
     return Scaffold(
