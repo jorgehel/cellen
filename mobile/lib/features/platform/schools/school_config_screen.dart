@@ -18,6 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_exception.dart';
+import '../../../core/providers/currency_provider.dart';
 import '../../../core/theme/app_theme.dart';
 
 // ---------------------------------------------------------------------------
@@ -33,7 +34,7 @@ const _segmentDefaults = <String, Map<String, bool>>{
     'meal_orders': true, 'trip_auth': true, 'pickup_auth': true,
     'photos': true, 'events': true, 'documents': true,
     'announcements': true, 'messages': true, 'finance': true,
-    'role_teacher': true, 'role_coordinator': true, 'role_finance_officer': true,
+    'absences': true, 'role_teacher': true, 'role_coordinator': true, 'role_finance_officer': true,
     'role_secretary': true, 'role_nurse': true, 'role_student': false,
   },
   'primary': {
@@ -44,7 +45,7 @@ const _segmentDefaults = <String, Map<String, bool>>{
     'meal_orders': true, 'trip_auth': true, 'pickup_auth': true,
     'photos': true, 'events': true, 'documents': true,
     'announcements': true, 'messages': true, 'finance': true,
-    'role_teacher': true, 'role_coordinator': true, 'role_finance_officer': true,
+    'absences': true, 'role_teacher': true, 'role_coordinator': true, 'role_finance_officer': true,
     'role_secretary': true, 'role_nurse': true, 'role_student': false,
   },
   'secondary': {
@@ -55,7 +56,7 @@ const _segmentDefaults = <String, Map<String, bool>>{
     'meal_orders': false, 'trip_auth': false, 'pickup_auth': false,
     'photos': false, 'events': true, 'documents': true,
     'announcements': true, 'messages': true, 'finance': true,
-    'role_teacher': true, 'role_coordinator': true, 'role_finance_officer': true,
+    'absences': true, 'role_teacher': true, 'role_coordinator': true, 'role_finance_officer': true,
     'role_secretary': true, 'role_nurse': false, 'role_student': true,
   },
   'combined': {
@@ -66,7 +67,7 @@ const _segmentDefaults = <String, Map<String, bool>>{
     'meal_orders': true, 'trip_auth': true, 'pickup_auth': true,
     'photos': true, 'events': true, 'documents': true,
     'announcements': true, 'messages': true, 'finance': true,
-    'role_coordinator': true, 'role_finance_officer': true,
+    'absences': true, 'role_teacher': true, 'role_coordinator': true, 'role_finance_officer': true,
     'role_secretary': true, 'role_nurse': true, 'role_student': true,
   },
   'full': {
@@ -77,7 +78,7 @@ const _segmentDefaults = <String, Map<String, bool>>{
     'meal_orders': true, 'trip_auth': true, 'pickup_auth': true,
     'photos': true, 'events': true, 'documents': true,
     'announcements': true, 'messages': true, 'finance': true,
-    'role_coordinator': true, 'role_finance_officer': true,
+    'absences': true, 'role_teacher': true, 'role_coordinator': true, 'role_finance_officer': true,
     'role_secretary': true, 'role_nurse': true, 'role_student': true,
   },
 };
@@ -126,6 +127,8 @@ const _allFeatures = <_Feat>[
   _Feat('messages',     'Mensagens',                    'Mensagens privadas entre utilizadores',                           _Cat.comms, Icons.chat_bubble_outline),
   // Financeiro
   _Feat('finance',      'Módulo Financeiro',            'Facturas, contratos, despesas, caixa e exportação SAF-T',        _Cat.finance, Icons.account_balance_wallet_outlined),
+  // Gestão de pessoal
+  _Feat('absences',            'Faltas de Funcionários', 'Registo de faltas e ausências de funcionários',                  _Cat.operational, Icons.event_busy_outlined),
   // Funções disponíveis
   _Feat('role_teacher',        'Professor / Educador',  'Função de docente: caderneta, presenças, notas e saúde',         _Cat.roles, Icons.school_outlined),
   _Feat('role_coordinator',    'Coordenador Pedagógico','Acesso à gestão académica e relatórios pedagógicos',             _Cat.roles, Icons.manage_accounts_outlined),
@@ -377,6 +380,7 @@ class _SchoolConfigScreenState extends ConsumerState<SchoolConfigScreen>
       );
 
       ref.invalidate(_schoolDetailProvider(widget.schoolId));
+      ref.invalidate(schoolInfoProvider);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Configuração guardada'),

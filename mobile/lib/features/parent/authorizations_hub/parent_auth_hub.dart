@@ -1,20 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/providers/currency_provider.dart';
 import '../../../core/theme/app_theme.dart';
 
-class ParentAuthHubScreen extends StatelessWidget {
+class ParentAuthHubScreen extends ConsumerWidget {
   const ParentAuthHubScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    const items = [
+  Widget build(BuildContext context, WidgetRef ref) {
+    final school = ref.watch(schoolInfoProvider).valueOrNull;
+
+    bool feat(String f) => school?.hasFeature(f) ?? true;
+
+    final items = [
       (
         icon: Icons.assignment_outlined,
         color: Colors.blue,
         label: 'Visitas de Estudo',
         description: 'Autorizar ou recusar pedidos de visitas de estudo',
         path: '/trip-authorizations',
+        show: feat('trip_auth'),
       ),
       (
         icon: Icons.transfer_within_a_station_outlined,
@@ -22,6 +29,7 @@ class ParentAuthHubScreen extends StatelessWidget {
         label: 'Levantamentos',
         description: 'Gerir pessoas autorizadas a levantar o seu filho',
         path: '/pickup-authorizations',
+        show: feat('pickup_auth'),
       ),
       (
         icon: Icons.event_available_outlined,
@@ -29,8 +37,9 @@ class ParentAuthHubScreen extends StatelessWidget {
         label: 'Marcações',
         description: 'Agendar reuniões com educadores e administração',
         path: '/appointments',
+        show: feat('appointments'),
       ),
-    ];
+    ].where((item) => item.show).toList();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Autorizações')),

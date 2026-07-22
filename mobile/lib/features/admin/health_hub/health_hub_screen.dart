@@ -15,14 +15,13 @@ class HealthHubScreen extends ConsumerWidget {
     bool feat(String f) => school?.hasFeature(f) ?? true;
 
     final items = [
-      // Always visible
       (
         icon: Icons.health_and_safety_outlined,
         color: Colors.red,
         label: 'Saúde',
         description: 'Registos de saúde, febres, medicamentos e bem-estar',
         path: '/health',
-        show: true,
+        show: feat('health'),
       ),
       (
         icon: Icons.report_outlined,
@@ -30,7 +29,7 @@ class HealthHubScreen extends ConsumerWidget {
         label: 'Ocorrências',
         description: 'Incidentes, acidentes e comportamentos notáveis',
         path: '/incidents',
-        show: true,
+        show: feat('incidents'),
       ),
       // Preschool / Primary only
       (

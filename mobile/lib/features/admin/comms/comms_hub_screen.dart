@@ -1,20 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/providers/currency_provider.dart';
 import '../../../core/theme/app_theme.dart';
 
-class CommsHubScreen extends StatelessWidget {
+class CommsHubScreen extends ConsumerWidget {
   const CommsHubScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    const items = [
+  Widget build(BuildContext context, WidgetRef ref) {
+    final school = ref.watch(schoolInfoProvider).valueOrNull;
+
+    bool feat(String f) => school?.hasFeature(f) ?? true;
+
+    final items = [
       (
         icon: Icons.campaign_outlined,
         color: Colors.blue,
         label: 'Comunicados',
         description: 'Avisos, circulares e comunicações para encarregados e staff',
         path: '/announcements',
+        show: feat('announcements'),
       ),
       (
         icon: Icons.chat_bubble_outline,
@@ -22,6 +29,7 @@ class CommsHubScreen extends StatelessWidget {
         label: 'Mensagens',
         description: 'Mensagens directas com encarregados e funcionários',
         path: '/messages',
+        show: feat('messages'),
       ),
       (
         icon: Icons.photo_library_outlined,
@@ -29,6 +37,7 @@ class CommsHubScreen extends StatelessWidget {
         label: 'Galeria',
         description: 'Fotos e momentos da vida escolar',
         path: '/photos',
+        show: feat('photos'),
       ),
       (
         icon: Icons.calendar_month_outlined,
@@ -36,6 +45,7 @@ class CommsHubScreen extends StatelessWidget {
         label: 'Calendário',
         description: 'Eventos, feriados e actividades escolares',
         path: '/events',
+        show: feat('events'),
       ),
       (
         icon: Icons.folder_outlined,
@@ -43,8 +53,9 @@ class CommsHubScreen extends StatelessWidget {
         label: 'Documentos',
         description: 'Biblioteca de documentos partilhados com encarregados',
         path: '/documents',
+        show: feat('documents'),
       ),
-    ];
+    ].where((item) => item.show).toList();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Comunicação')),

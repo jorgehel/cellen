@@ -1,20 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/providers/currency_provider.dart';
 import '../../../core/theme/app_theme.dart';
 
-class ParentSchoolHubScreen extends StatelessWidget {
+class ParentSchoolHubScreen extends ConsumerWidget {
   const ParentSchoolHubScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    const items = [
+  Widget build(BuildContext context, WidgetRef ref) {
+    final school = ref.watch(schoolInfoProvider).valueOrNull;
+
+    bool feat(String f) => school?.hasFeature(f) ?? true;
+
+    final items = [
       (
         icon: Icons.campaign_outlined,
         color: Colors.blue,
         label: 'Comunicados',
         description: 'Avisos e informações da escola',
         path: '/announcements',
+        show: feat('announcements'),
       ),
       (
         icon: Icons.calendar_month_outlined,
@@ -22,6 +29,7 @@ class ParentSchoolHubScreen extends StatelessWidget {
         label: 'Calendário',
         description: 'Eventos, feriados e actividades',
         path: '/events',
+        show: feat('events'),
       ),
       (
         icon: Icons.folder_outlined,
@@ -29,6 +37,7 @@ class ParentSchoolHubScreen extends StatelessWidget {
         label: 'Documentos',
         description: 'Circulares, regulamentos e formulários',
         path: '/documents',
+        show: feat('documents'),
       ),
       (
         icon: Icons.photo_library_outlined,
@@ -36,6 +45,7 @@ class ParentSchoolHubScreen extends StatelessWidget {
         label: 'Galeria',
         description: 'Fotos das actividades e momentos escolares',
         path: '/photos',
+        show: feat('photos'),
       ),
       (
         icon: Icons.restaurant_menu_outlined,
@@ -43,8 +53,9 @@ class ParentSchoolHubScreen extends StatelessWidget {
         label: 'Cardápio',
         description: 'Ementa semanal da escola',
         path: '/parent/menu',
+        show: feat('meal_orders'),
       ),
-    ];
+    ].where((item) => item.show).toList();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Escola')),

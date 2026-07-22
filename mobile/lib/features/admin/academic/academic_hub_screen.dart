@@ -23,7 +23,7 @@ class AcademicHubScreen extends ConsumerWidget {
         label: 'Presenças',
         description: 'Registo diário de ${terms.students.toLowerCase()}',
         path: '/teacher/attendance',
-        feature: null,
+        feature: 'checkin',
       ),
       (
         icon: Icons.event_busy_outlined,
@@ -31,7 +31,7 @@ class AcademicHubScreen extends ConsumerWidget {
         label: 'Faltas',
         description: 'Faltas e ausências de funcionários',
         path: '/admin/absences',
-        feature: null,
+        feature: 'absences',
       ),
       (
         icon: terms.classroomIcon,
@@ -67,7 +67,7 @@ class AcademicHubScreen extends ConsumerWidget {
         label: 'Livro de Ponto',
         description: 'Presenças por aula — registo de faltas por disciplina',
         path: '/lesson-attendance',
-        feature: 'timetable_k12',
+        feature: 'lesson_attendance',
       ),
       (
         icon: Icons.book_outlined,
@@ -91,7 +91,7 @@ class AcademicHubScreen extends ConsumerWidget {
         label: 'Boletins',
         description: 'Boletins e médias por turma e aluno',
         path: '/admin/academic/report-cards',
-        feature: 'grades',
+        feature: 'report_cards',
       ),
     ];
 

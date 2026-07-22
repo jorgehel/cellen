@@ -396,7 +396,7 @@ const _pathFeatureMap = {
   '/teacher/grades':           'grades',
   '/lesson-attendance':        'lesson_attendance',
   '/timetable':                'timetable_k12',
-  '/admin/absences':           'checkin',
+  '/admin/absences':           'absences',
   // ── Parent-specific ─────────────────────────────────────────────────
   '/parent/caderneta':         'caderneta',
   '/parent/invoices':          'finance',
@@ -404,7 +404,7 @@ const _pathFeatureMap = {
   '/parent/menu':              'meal_orders',
   '/parent/authorizations':    'trip_auth',
   '/parent/grades':            'report_cards',
-  '/parent/attendance':        'checkin',
+  '/appointments':             'appointments',
 };
 
 List<SidebarItem> _buildSidebarItems(Set<UserRole> roles, [School? school]) {
