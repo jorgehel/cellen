@@ -112,8 +112,11 @@ class _ChildDetailView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
+    final showCaderneta = !terms.isK12;
+
     return DefaultTabController(
-      length: 4,
+      length: showCaderneta ? 4 : 3,
       child: Scaffold(
         appBar: AppBar(
           title: Text(child.fullName),
@@ -125,13 +128,13 @@ class _ChildDetailView extends ConsumerWidget {
                   context.push('/admin/children/${child.id}/edit'),
             ),
           ],
-          bottom: const TabBar(
+          bottom: TabBar(
             isScrollable: true,
             tabs: [
-              Tab(text: 'Informação'),
-              Tab(text: 'Encarregados'),
-              Tab(text: 'Caderneta'),
-              Tab(text: 'Facturas'),
+              const Tab(text: 'Informação'),
+              const Tab(text: 'Encarregados'),
+              if (showCaderneta) const Tab(text: 'Caderneta'),
+              const Tab(text: 'Facturas'),
             ],
           ),
         ),
@@ -139,7 +142,7 @@ class _ChildDetailView extends ConsumerWidget {
           children: [
             _InfoTab(child: child, onUploadPhoto: () => _uploadPhoto(context, ref, child.id)),
             _GuardiansTab(childId: child.id),
-            _CadernetaTab(childId: child.id),
+            if (showCaderneta) _CadernetaTab(childId: child.id),
             _InvoicesTab(childId: child.id),
           ],
         ),

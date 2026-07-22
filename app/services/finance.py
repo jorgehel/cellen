@@ -17,6 +17,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.academic import Enrollment
 from app.models.finance import (
     BillingItem, BillingItemPrice, CashSession, Contract, CreditEntry, CreditNote,
     Expense, ExpenseCategory, Invoice, InvoiceLine, Payment, PaymentAllocation,
@@ -554,6 +555,15 @@ async def recalculate_invoice_status(db: AsyncSession, invoice_id: UUID) -> None
 
     if balance <= 0:
         invoice.status = "paid"
+        # Auto-activate any enrollment whose fee invoice just became paid
+        enroll_r = await db.execute(
+            select(Enrollment).where(
+                Enrollment.fee_invoice_id == invoice_id,
+                Enrollment.status == "pending",
+            )
+        )
+        for enrollment in enroll_r.scalars().all():
+            enrollment.status = "active"
     elif balance < invoice.gross_total:
         invoice.status = "partially_paid"
     else:

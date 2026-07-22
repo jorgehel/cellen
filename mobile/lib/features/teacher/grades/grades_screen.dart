@@ -283,6 +283,7 @@ class _GradesScreenState extends ConsumerState<GradesScreen> {
                                 _selectedSubject = subj;
                                 _marks = [];
                               });
+                              _loadMarks();
                             },
                           ),
                   ),
@@ -298,19 +299,23 @@ class _GradesScreenState extends ConsumerState<GradesScreen> {
                         child: ChoiceChip(
                           label: Text('${t}º'),
                           selected: _selectedTrimester == t,
-                          onSelected: (_) => setState(() {
-                            _selectedTrimester = t;
-                            _marks = [];
-                          }),
+                          onSelected: (_) {
+                            setState(() {
+                              _selectedTrimester = t;
+                              _marks = [];
+                            });
+                            if (_selectedSubject != null) _loadMarks();
+                          },
                         ),
                       ),
                     const Spacer(),
                     if (_selectedSubject != null)
-                      FilledButton.tonal(
+                      IconButton(
+                        tooltip: 'Recarregar',
                         onPressed: _loading ? null : _loadMarks,
-                        child: _loading
+                        icon: _loading
                             ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                            : const Text('Carregar'),
+                            : const Icon(Icons.refresh),
                       ),
                   ],
                 ),
@@ -372,8 +377,8 @@ class _GradesScreenState extends ConsumerState<GradesScreen> {
                         const SizedBox(height: 16),
                         Text(
                           _selectedSubject == null
-                              ? 'Seleccione turma, disciplina e trimestre para iniciar'
-                              : 'Toque em "Carregar" para ver os alunos',
+                              ? 'Seleccione turma e disciplina para iniciar'
+                              : 'A carregar alunos…',
                           style: const TextStyle(color: AppTheme.textSecondary),
                           textAlign: TextAlign.center,
                         ),
