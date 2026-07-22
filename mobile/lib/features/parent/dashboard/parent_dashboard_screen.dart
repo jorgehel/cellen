@@ -79,7 +79,11 @@ class _ParentDashboardScreenState
     final invoicesAsync = ref.watch(parentOutstandingInvoicesProvider);
     final unreadAsync = ref.watch(parentUnreadMessagesProvider);
     final currency = ref.watch(currencyFormatProvider);
-    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
+    final school = ref.watch(schoolInfoProvider).valueOrNull;
+    final terms = SchoolTerms.of(school);
+    final hasFinance = school?.hasFeature('finance') ?? true;
+    final hasCaderneta = school?.hasFeature('caderneta') ?? true;
+    final hasPhotos = school?.hasFeature('photos') ?? true;
     final now = DateTime.now();
     final isWide = MediaQuery.of(context).size.width >= 900;
 
@@ -144,7 +148,7 @@ class _ParentDashboardScreenState
             const SizedBox(height: 20),
 
             // ── Finance alert banner ──
-            if (!_dismissedInvoiceBanner)
+            if (hasFinance && !_dismissedInvoiceBanner)
               invoicesAsync.when(
                 loading: () => const SizedBox.shrink(),
                 error: (_, __) => const SizedBox.shrink(),
@@ -280,16 +284,18 @@ class _ParentDashboardScreenState
                   ),
                 ),
                 const SizedBox(width: 10),
-                Expanded(
-                  child: _QuickLinkButton(
-                    icon: Icons.photo_library_outlined,
-                    label: 'Galeria',
-                    color: AppTheme.success,
-                    onTap: () => context.go('/photos'),
+                if (hasPhotos) ...[
+                  Expanded(
+                    child: _QuickLinkButton(
+                      icon: Icons.photo_library_outlined,
+                      label: 'Galeria',
+                      color: AppTheme.success,
+                      onTap: () => context.go('/photos'),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
+                  const SizedBox(width: 10),
+                ],
+                if (hasCaderneta) Expanded(
                   child: _QuickLinkButton(
                     icon: Icons.menu_book_outlined,
                     label: 'Caderneta',
@@ -302,32 +308,33 @@ class _ParentDashboardScreenState
             const SizedBox(height: 28),
 
             // ── Recent cadernetas ──
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Relatórios Recentes',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-                TextButton(
-                  onPressed: () => context.go('/parent/caderneta'),
-                  child: const Text(
-                    'Ver todos',
+            if (hasCaderneta) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Relatórios Recentes',
                     style: TextStyle(
-                      color: AppTheme.primary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.textPrimary,
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            cadernetasAsync.when(
+                  TextButton(
+                    onPressed: () => context.go('/parent/caderneta'),
+                    child: const Text(
+                      'Ver todos',
+                      style: TextStyle(
+                        color: AppTheme.primary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              cadernetasAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Text('Erro: $e'),
               data: (cadernetas) {
@@ -402,10 +409,12 @@ class _ParentDashboardScreenState
                 );
               },
             ),
+            ], // end hasCaderneta
 
             const SizedBox(height: 28),
 
             // ── Invoices ──
+            if (hasFinance) ...[
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -534,6 +543,7 @@ class _ParentDashboardScreenState
                 );
               },
             ),
+            ], // end hasFinance
           ],
         ),
       ),

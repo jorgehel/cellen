@@ -95,7 +95,11 @@ class _TeacherDashboardScreenState
     final cadernetasAsync = ref.watch(teacherRecentCadernetsProvider);
     final childrenAsync = ref.watch(teacherChildrenProvider);
     final unreadAsync = ref.watch(teacherUnreadMsgProvider);
-    final terms = SchoolTerms.of(ref.watch(schoolInfoProvider).valueOrNull);
+    final school = ref.watch(schoolInfoProvider).valueOrNull;
+    final terms = SchoolTerms.of(school);
+    final hasCheckin = school?.hasFeature('checkin') ?? true;
+    final hasCaderneta = school?.hasFeature('caderneta') ?? true;
+    final hasMessages = school?.hasFeature('messages') ?? true;
     final theme = Theme.of(context);
     final isWide = MediaQuery.of(context).size.width >= 900;
 
@@ -161,94 +165,92 @@ class _TeacherDashboardScreenState
             ),
             const SizedBox(height: 24),
 
-            // ── Stat cards ──
-            const Text(
-              'Presenças de Hoje',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-                color: AppTheme.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 12),
-            attendanceAsync.when(
-              loading: () => GridView.count(
-                crossAxisCount: isWide ? 3 : 3,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-                childAspectRatio: isWide ? 1.8 : 1.3,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                children: const [
-                  AppStatCard(label: 'Total', value: '...', icon: Icons.people, color: AppTheme.primary),
-                  AppStatCard(label: 'Presentes', value: '...', icon: Icons.check_circle, color: AppTheme.success),
-                  AppStatCard(label: 'Ausentes', value: '...', icon: Icons.cancel, color: AppTheme.danger),
-                ],
-              ),
-              error: (_, __) => Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppTheme.border),
-                ),
-                child: const Text('Erro ao carregar presenças',
-                    style: TextStyle(color: AppTheme.danger)),
-              ),
-              data: (s) => GridView.count(
-                crossAxisCount: isWide ? 3 : 3,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-                childAspectRatio: isWide ? 1.8 : 1.3,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                children: [
-                  AppStatCard(
-                    label: 'Total',
-                    value: '${s.totalEnrolled}',
-                    icon: Icons.people,
-                    color: AppTheme.primary,
-                    onTap: () => context.go('/teacher/attendance'),
-                  ),
-                  AppStatCard(
-                    label: 'Presentes',
-                    value: '${s.checkedIn}',
-                    icon: Icons.check_circle,
-                    color: AppTheme.success,
-                    onTap: () => context.go('/teacher/attendance'),
-                  ),
-                  AppStatCard(
-                    label: 'Ausentes',
-                    value: '${s.absent}',
-                    icon: Icons.cancel,
-                    color: AppTheme.danger,
-                    onTap: () => context.go('/teacher/attendance'),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // ── View attendance button ──
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => context.go('/teacher/attendance'),
-                icon: const Icon(Icons.fact_check_outlined, size: 18),
-                label: const Text('Gerir Presenças'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppTheme.primary,
-                  side: const BorderSide(color: AppTheme.primary),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            // ── Stat cards (checkin only) ──
+            if (hasCheckin) ...[
+              const Text(
+                'Presenças de Hoje',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.textPrimary,
                 ),
               ),
-            ),
-
-            const SizedBox(height: 28),
+              const SizedBox(height: 12),
+              attendanceAsync.when(
+                loading: () => GridView.count(
+                  crossAxisCount: isWide ? 3 : 3,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                  childAspectRatio: isWide ? 1.8 : 1.3,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: const [
+                    AppStatCard(label: 'Total', value: '...', icon: Icons.people, color: AppTheme.primary),
+                    AppStatCard(label: 'Presentes', value: '...', icon: Icons.check_circle, color: AppTheme.success),
+                    AppStatCard(label: 'Ausentes', value: '...', icon: Icons.cancel, color: AppTheme.danger),
+                  ],
+                ),
+                error: (_, __) => Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.border),
+                  ),
+                  child: const Text('Erro ao carregar presenças',
+                      style: TextStyle(color: AppTheme.danger)),
+                ),
+                data: (s) => GridView.count(
+                  crossAxisCount: isWide ? 3 : 3,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                  childAspectRatio: isWide ? 1.8 : 1.3,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    AppStatCard(
+                      label: 'Total',
+                      value: '${s.totalEnrolled}',
+                      icon: Icons.people,
+                      color: AppTheme.primary,
+                      onTap: () => context.go('/teacher/attendance'),
+                    ),
+                    AppStatCard(
+                      label: 'Presentes',
+                      value: '${s.checkedIn}',
+                      icon: Icons.check_circle,
+                      color: AppTheme.success,
+                      onTap: () => context.go('/teacher/attendance'),
+                    ),
+                    AppStatCard(
+                      label: 'Ausentes',
+                      value: '${s.absent}',
+                      icon: Icons.cancel,
+                      color: AppTheme.danger,
+                      onTap: () => context.go('/teacher/attendance'),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => context.go('/teacher/attendance'),
+                  icon: const Icon(Icons.fact_check_outlined, size: 18),
+                  label: const Text('Gerir Presenças'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.primary,
+                    side: const BorderSide(color: AppTheme.primary),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 28),
+            ],
 
             // ── Quick links ──
             const Text(
@@ -262,17 +264,19 @@ class _TeacherDashboardScreenState
             const SizedBox(height: 12),
             Row(
               children: [
-                Expanded(
-                  child: _QuickLinkTile(
-                    icon: Icons.menu_book_outlined,
-                    label: 'Caderneta',
-                    subtitle: 'Novo relatório',
-                    color: const Color(0xFF7C3AED),
-                    onTap: () => context.go('/teacher/caderneta/new'),
+                if (hasCaderneta) ...[
+                  Expanded(
+                    child: _QuickLinkTile(
+                      icon: Icons.menu_book_outlined,
+                      label: 'Caderneta',
+                      subtitle: 'Novo relatório',
+                      color: const Color(0xFF7C3AED),
+                      onTap: () => context.go('/teacher/caderneta/new'),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
+                  const SizedBox(width: 12),
+                ],
+                if (hasMessages) Expanded(
                   child: unreadAsync.when(
                     loading: () => _QuickLinkTile(
                       icon: Icons.chat_bubble_outline,

@@ -292,32 +292,36 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                _QuickAction(
-                  icon: Icons.fact_check,
-                  label: 'Presenças',
-                  onTap: () => context.go('/teacher/attendance'),
-                ),
-                _QuickAction(
-                  icon: Icons.receipt_long,
-                  label: 'Nova Fatura',
-                  onTap: () => context.go('/admin/finance/invoices'),
-                ),
-                _QuickAction(
-                  icon: Icons.report,
-                  label: 'Ocorrências',
-                  onTap: () => context.go('/incidents'),
-                ),
-                _QuickAction(
-                  icon: Icons.calendar_month,
-                  label: 'Calendário',
-                  onTap: () => context.go('/events'),
-                ),
+                if (school?.hasFeature('checkin') ?? true)
+                  _QuickAction(
+                    icon: Icons.fact_check,
+                    label: 'Presenças',
+                    onTap: () => context.go('/teacher/attendance'),
+                  ),
+                if (school?.hasFeature('finance') ?? true)
+                  _QuickAction(
+                    icon: Icons.receipt_long,
+                    label: 'Nova Fatura',
+                    onTap: () => context.go('/admin/finance/invoices'),
+                  ),
+                if (school?.hasFeature('incidents') ?? true)
+                  _QuickAction(
+                    icon: Icons.report,
+                    label: 'Ocorrências',
+                    onTap: () => context.go('/incidents'),
+                  ),
+                if (school?.hasFeature('events') ?? true)
+                  _QuickAction(
+                    icon: Icons.calendar_month,
+                    label: 'Calendário',
+                    onTap: () => context.go('/events'),
+                  ),
                 _QuickAction(
                   icon: studentIcon,
                   label: terms.students,
                   onTap: () => context.go('/admin/children'),
                 ),
-                if (terms.isK12)
+                if (terms.isK12 && (school?.hasFeature('timetable_k12') ?? true))
                   _QuickAction(
                     icon: Icons.table_chart_outlined,
                     label: 'Horário',

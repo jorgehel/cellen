@@ -47,13 +47,14 @@ class ParentChildrenHubScreen extends ConsumerWidget {
         ),
 
       // Shared cards (all segments)
-      (
-        icon: Icons.fact_check_outlined,
-        color: Colors.indigo,
-        label: 'Presenças',
-        description: 'Histórico de presenças e faltas',
-        path: '/parent/attendance',
-      ),
+      if ((school?.hasFeature('checkin') ?? true) || (school?.hasFeature('lesson_attendance') ?? true))
+        (
+          icon: Icons.fact_check_outlined,
+          color: Colors.indigo,
+          label: 'Presenças',
+          description: 'Histórico de presenças e faltas',
+          path: '/parent/attendance',
+        ),
       if (school?.hasFeature('health') ?? true)
         (
           icon: Icons.health_and_safety_outlined,
@@ -70,13 +71,14 @@ class ParentChildrenHubScreen extends ConsumerWidget {
           description: 'Calendário vacinal e registos de imunização',
           path: '/health/immunizations',
         ),
-      (
-        icon: Icons.warning_amber_outlined,
-        color: Colors.orange,
-        label: 'Ocorrências',
-        description: 'Incidentes e ocorrências registadas',
-        path: '/incidents',
-      ),
+      if (school?.hasFeature('incidents') ?? true)
+        (
+          icon: Icons.warning_amber_outlined,
+          color: Colors.orange,
+          label: 'Ocorrências',
+          description: 'Incidentes e ocorrências registadas',
+          path: '/incidents',
+        ),
     ];
 
     return Scaffold(

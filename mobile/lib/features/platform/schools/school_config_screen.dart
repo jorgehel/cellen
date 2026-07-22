@@ -33,7 +33,7 @@ const _segmentDefaults = <String, Map<String, bool>>{
     'meal_orders': true, 'trip_auth': true, 'pickup_auth': true,
     'photos': true, 'events': true, 'documents': true,
     'announcements': true, 'messages': true, 'finance': true,
-    'role_coordinator': true, 'role_finance_officer': true,
+    'role_teacher': true, 'role_coordinator': true, 'role_finance_officer': true,
     'role_secretary': true, 'role_nurse': true, 'role_student': false,
   },
   'primary': {
@@ -44,7 +44,7 @@ const _segmentDefaults = <String, Map<String, bool>>{
     'meal_orders': true, 'trip_auth': true, 'pickup_auth': true,
     'photos': true, 'events': true, 'documents': true,
     'announcements': true, 'messages': true, 'finance': true,
-    'role_coordinator': true, 'role_finance_officer': true,
+    'role_teacher': true, 'role_coordinator': true, 'role_finance_officer': true,
     'role_secretary': true, 'role_nurse': true, 'role_student': false,
   },
   'secondary': {
@@ -55,7 +55,7 @@ const _segmentDefaults = <String, Map<String, bool>>{
     'meal_orders': false, 'trip_auth': false, 'pickup_auth': false,
     'photos': false, 'events': true, 'documents': true,
     'announcements': true, 'messages': true, 'finance': true,
-    'role_coordinator': true, 'role_finance_officer': true,
+    'role_teacher': true, 'role_coordinator': true, 'role_finance_officer': true,
     'role_secretary': true, 'role_nurse': false, 'role_student': true,
   },
   'combined': {
@@ -127,6 +127,7 @@ const _allFeatures = <_Feat>[
   // Financeiro
   _Feat('finance',      'Módulo Financeiro',            'Facturas, contratos, despesas, caixa e exportação SAF-T',        _Cat.finance, Icons.account_balance_wallet_outlined),
   // Funções disponíveis
+  _Feat('role_teacher',        'Professor / Educador',  'Função de docente: caderneta, presenças, notas e saúde',         _Cat.roles, Icons.school_outlined),
   _Feat('role_coordinator',    'Coordenador Pedagógico','Acesso à gestão académica e relatórios pedagógicos',             _Cat.roles, Icons.manage_accounts_outlined),
   _Feat('role_finance_officer','Director Financeiro',   'Acesso completo ao módulo financeiro',                            _Cat.roles, Icons.account_balance_outlined),
   _Feat('role_secretary',      'Secretaria',            'Matrículas, comunicação e dados de alunos',                      _Cat.roles, Icons.badge_outlined),
