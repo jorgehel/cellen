@@ -94,9 +94,13 @@ class _LessonAttendanceSummaryScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Faltas por Disciplina'),
-        subtitle: Text(widget.turmaName,
-            style: const TextStyle(fontSize: 13)),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Faltas por Disciplina'),
+            Text(widget.turmaName, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w400)),
+          ],
+        ),
         actions: [
           IconButton(
             tooltip: _atRiskOnly ? 'Mostrar todos' : 'Só em risco',

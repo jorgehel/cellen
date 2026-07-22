@@ -113,8 +113,13 @@ class LessonAttendanceTodayScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Livro de Ponto'),
-        subtitle: Text(today, style: const TextStyle(fontSize: 13)),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Livro de Ponto'),
+            Text(today, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w400)),
+          ],
+        ),
       ),
       body: sessionsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -297,7 +302,7 @@ class _LessonAttendanceSessionScreenState
               })
           .toList();
 
-      await ref.read(apiClientProvider).post('/lesson-attendance/session/bulk', {
+      await ref.read(apiClientProvider).post('/lesson-attendance/session/bulk', data: {
         'schedule_id': widget.scheduleId,
         'subject_id': widget.subjectId,
         'date': _today,
@@ -333,10 +338,16 @@ class _LessonAttendanceSessionScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.subjectName),
-        subtitle: Text(
-            '${widget.turmaName} · ${DateFormat('d MMM', 'pt').format(DateTime.now())}',
-            style: const TextStyle(fontSize: 13)),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(widget.subjectName),
+            Text(
+              '${widget.turmaName} · ${DateFormat('d MMM', 'pt').format(DateTime.now())}',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w400),
+            ),
+          ],
+        ),
         actions: [
           if (_students != null)
             PopupMenuButton<String>(
