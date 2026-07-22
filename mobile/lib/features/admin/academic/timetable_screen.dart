@@ -1,13 +1,12 @@
-/// K-12 Timetable screen — week grid: period rows × Mon–Fri columns.
+/// K-12 Timetable screen — school-year-centric design.
 ///
-/// Admin / Coordinator: tap any cell to assign subject, teacher, room.
-/// Teacher: read-only view of the grid.
-///
-/// Data flow:
-///   1. Load turmas list
-///   2. User selects a turma → load schedules for that turma
-///   3. User selects a schedule → load timetable grid
-///   4. Grid shows periods (rows) × days (columns) × cells (subject/teacher/room)
+/// Tab 0 — Requisitos: All turmas for the selected year with their requirement
+///   cards (subject × teacher × periods/week). Inline add/edit/delete.
+///   "Gerar Horário" runs the constraint solver for ALL turmas at once,
+///   preventing teacher double-booking across classes.
+/// Tab 1 — Horário: turma selector → week grid (period rows × Mon–Fri cols).
+///   Admin/Coordinator: tap any cell to assign subject, teacher, room.
+///   Teacher: read-only view.
 library;
 
 import 'package:flutter/material.dart';
@@ -22,25 +21,25 @@ import '../../../core/theme/app_theme.dart';
 // Models
 // ---------------------------------------------------------------------------
 
-class _TurmaItem {
-  final String id;
-  final String name;
-  const _TurmaItem({required this.id, required this.name});
-  factory _TurmaItem.fromJson(Map<String, dynamic> j) =>
-      _TurmaItem(id: j['id'] as String, name: j['name'] as String);
-}
-
 class _ScheduleItem {
   final String id;
-  final String? label;
-  const _ScheduleItem({required this.id, this.label});
-  factory _ScheduleItem.fromJson(Map<String, dynamic> j) => _ScheduleItem(
-        id: j['id'] as String,
-        label: [j['school_year_label'], j['turma_name']]
-            .where((v) => v != null && (v as String).isNotEmpty)
-            .cast<String>()
-            .join(' — '),
-      );
+  final String turmaId;
+  final String turmaName;
+  final String schoolYearId;
+  const _ScheduleItem({
+    required this.id,
+    required this.turmaId,
+    required this.turmaName,
+    required this.schoolYearId,
+  });
+  factory _ScheduleItem.fromJson(Map<String, dynamic> j) {
+    return _ScheduleItem(
+      id: j['id'] as String,
+      turmaId: j['turma_id'] as String? ?? '',
+      turmaName: j['turma_name'] as String? ?? '',
+      schoolYearId: j['school_year_id'] as String? ?? '',
+    );
+  }
 }
 
 class _Period {
@@ -239,6 +238,18 @@ class _GenerateResult {
   });
 }
 
+class _SchoolYear {
+  final String id;
+  final String label;
+  final bool isActive;
+  const _SchoolYear({required this.id, required this.label, required this.isActive});
+  factory _SchoolYear.fromJson(Map<String, dynamic> j) => _SchoolYear(
+        id: j['id'] as String,
+        label: j['year_label'] as String,
+        isActive: j['is_active'] as bool? ?? false,
+      );
+}
+
 class _EmployeeItem {
   final String id;
   final String name;
@@ -246,10 +257,7 @@ class _EmployeeItem {
   factory _EmployeeItem.fromJson(Map<String, dynamic> j) {
     final first = j['first_name'] as String? ?? '';
     final last = j['last_name'] as String? ?? '';
-    return _EmployeeItem(
-      id: j['id'] as String,
-      name: '$first $last'.trim(),
-    );
+    return _EmployeeItem(id: j['id'] as String, name: '$first $last'.trim());
   }
 }
 
@@ -257,23 +265,20 @@ class _EmployeeItem {
 // Providers
 // ---------------------------------------------------------------------------
 
-final _turmasProvider = FutureProvider.autoDispose<List<_TurmaItem>>((ref) async {
-  final data = await ref.read(apiClientProvider).get('/academic/turmas') as List;
-  return data.map((e) => _TurmaItem.fromJson(e as Map<String, dynamic>)).toList();
-});
-
-final _schedulesForTurmaProvider =
-    FutureProvider.autoDispose.family<List<_ScheduleItem>, String>((ref, turmaId) async {
+/// All schedules for a given school year (with turma_name from server).
+final _schedulesForYearProvider =
+    FutureProvider.autoDispose.family<List<_ScheduleItem>, String>((ref, yearId) async {
   final data = await ref
       .read(apiClientProvider)
-      .get('/academic/schedules?turma_id=$turmaId') as List;
+      .get('/academic/schedules?school_year_id=$yearId&limit=100') as List;
   return data.map((e) => _ScheduleItem.fromJson(e as Map<String, dynamic>)).toList();
 });
 
 final _gridProvider =
     FutureProvider.autoDispose.family<_GridData, String>((ref, scheduleId) async {
-  final api = ref.read(apiClientProvider);
-  final raw = await api.get('/timetable/grid?schedule_id=$scheduleId') as Map<String, dynamic>;
+  final raw = await ref
+      .read(apiClientProvider)
+      .get('/timetable/grid?schedule_id=$scheduleId') as Map<String, dynamic>;
   return _GridData(
     scheduleId: raw['schedule_id'] as String,
     turmaName: raw['turma_name'] as String? ?? '',
@@ -310,21 +315,26 @@ final _requirementsProvider =
   return data.map((e) => _Requirement.fromJson(e as Map<String, dynamic>)).toList();
 });
 
+final _schoolYearsProvider = FutureProvider.autoDispose<List<_SchoolYear>>((ref) async {
+  final data = await ref.read(apiClientProvider).get('/schools/school-years') as List;
+  return data.map((e) => _SchoolYear.fromJson(e as Map<String, dynamic>)).toList();
+});
+
 // ---------------------------------------------------------------------------
 // Deterministic subject color palette
 // ---------------------------------------------------------------------------
 
 const _subjectColors = [
-  Color(0xFF1565C0), // blue-800
-  Color(0xFF2E7D32), // green-800
-  Color(0xFF6A1B9A), // purple-800
-  Color(0xFFAD1457), // pink-800
-  Color(0xFFE65100), // orange-800
-  Color(0xFF00695C), // teal-800
-  Color(0xFF4527A0), // deep-purple-800
-  Color(0xFF558B2F), // light-green-800
-  Color(0xFF0277BD), // light-blue-800
-  Color(0xFF827717), // lime-900
+  Color(0xFF1565C0),
+  Color(0xFF2E7D32),
+  Color(0xFF6A1B9A),
+  Color(0xFFAD1457),
+  Color(0xFFE65100),
+  Color(0xFF00695C),
+  Color(0xFF4527A0),
+  Color(0xFF558B2F),
+  Color(0xFF0277BD),
+  Color(0xFF827717),
 ];
 
 Color _colorForSubject(String? subjectId) {
@@ -344,11 +354,22 @@ class TimetableScreen extends ConsumerStatefulWidget {
   ConsumerState<TimetableScreen> createState() => _TimetableScreenState();
 }
 
-class _TimetableScreenState extends ConsumerState<TimetableScreen> {
-  _TurmaItem? _selectedTurma;
-  _ScheduleItem? _selectedSchedule;
+class _TimetableScreenState extends ConsumerState<TimetableScreen>
+    with SingleTickerProviderStateMixin {
+  _SchoolYear? _selectedYear;
+  late final TabController _tabController;
 
-  static const _days = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex'];
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   bool get _canEdit {
     final auth = ref.read(authProvider);
@@ -357,363 +378,169 @@ class _TimetableScreenState extends ConsumerState<TimetableScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final turmasAsync = ref.watch(_turmasProvider);
+    final yearsAsync = ref.watch(_schoolYearsProvider);
+
+    // Auto-select active year on first load
+    yearsAsync.whenData((years) {
+      if (_selectedYear == null && years.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {
+              _selectedYear = years.firstWhere(
+                (y) => y.isActive,
+                orElse: () => years.first,
+              );
+            });
+          }
+        });
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Horário Lectivo'),
-        actions: [
-          if (_selectedSchedule != null) ...[
-            if (_canEdit)
-              IconButton(
-                icon: const Icon(Icons.list_alt_outlined),
-                tooltip: 'Requisitos',
-                onPressed: _showRequirementsSheet,
-              ),
-            if (_canEdit)
-              IconButton(
-                icon: const Icon(Icons.auto_fix_high),
-                tooltip: 'Gerar Horário',
-                onPressed: _generateAndPreview,
-              ),
-            IconButton(
-              icon: const Icon(Icons.access_time_outlined),
-              tooltip: 'Períodos',
-              onPressed: () => _showPeriodsDialog(),
-            ),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(icon: Icon(Icons.list_alt_outlined, size: 18), text: 'Requisitos'),
+            Tab(icon: Icon(Icons.table_chart_outlined, size: 18), text: 'Horário'),
           ],
+        ),
+        actions: [
+          if (_selectedYear != null && _canEdit)
+            IconButton(
+              icon: const Icon(Icons.auto_fix_high),
+              tooltip: 'Gerar horário para todas as turmas do ano',
+              onPressed: _generateForYear,
+            ),
+          IconButton(
+            icon: const Icon(Icons.access_time_outlined),
+            tooltip: 'Períodos lectivos',
+            onPressed: _showPeriodsDialog,
+          ),
         ],
       ),
       body: Column(
         children: [
-          // ── Selectors ──────────────────────────────────────────────────────
+          // ── Year selector ───────────────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: turmasAsync.when(
-                    loading: () => const LinearProgressIndicator(),
-                    error: (e, _) => Text('Erro: $e',
-                        style: const TextStyle(color: AppTheme.danger)),
-                    data: (turmas) => DropdownButtonFormField<_TurmaItem>(
-                      value: _selectedTurma,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: yearsAsync.when(
+              loading: () => const LinearProgressIndicator(),
+              error: (e, _) => Text('Erro: $e',
+                  style: const TextStyle(color: AppTheme.danger)),
+              data: (years) => years.isEmpty
+                  ? const Text(
+                      'Nenhum ano lectivo encontrado.',
+                      style: TextStyle(color: AppTheme.danger),
+                    )
+                  : DropdownButtonFormField<_SchoolYear>(
+                      value: _selectedYear,
                       decoration: const InputDecoration(
-                        labelText: 'Turma',
+                        labelText: 'Ano Lectivo',
                         border: OutlineInputBorder(),
                         isDense: true,
                         contentPadding:
                             EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       ),
-                      items: turmas
-                          .map((t) => DropdownMenuItem(
-                              value: t, child: Text(t.name)))
+                      items: years
+                          .map((y) => DropdownMenuItem(
+                                value: y,
+                                child: Row(
+                                  children: [
+                                    Text(y.label),
+                                    if (y.isActive) ...[
+                                      const SizedBox(width: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 6, vertical: 1),
+                                        decoration: BoxDecoration(
+                                          color: Colors.green.withAlpha(30),
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                        ),
+                                        child: const Text('activo',
+                                            style: TextStyle(
+                                                fontSize: 10,
+                                                color: Colors.green)),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ))
                           .toList(),
-                      onChanged: (t) => setState(() {
-                        _selectedTurma = t;
-                        _selectedSchedule = null;
-                      }),
+                      onChanged: (y) => setState(() => _selectedYear = y),
                     ),
-                  ),
-                ),
-                if (_selectedTurma != null) ...[
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ref
-                        .watch(_schedulesForTurmaProvider(_selectedTurma!.id))
-                        .when(
-                          loading: () => const LinearProgressIndicator(),
-                          error: (e, _) => Text('Erro: $e'),
-                          data: (schedules) =>
-                              DropdownButtonFormField<_ScheduleItem>(
-                            value: _selectedSchedule,
-                            decoration: const InputDecoration(
-                              labelText: 'Horário',
-                              border: OutlineInputBorder(),
-                              isDense: true,
-                              contentPadding: EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 10),
-                            ),
-                            items: schedules
-                                .map((s) => DropdownMenuItem(
-                                    value: s,
-                                    child: Text(s.label ?? s.id,
-                                        overflow: TextOverflow.ellipsis)))
-                                .toList(),
-                            onChanged: (s) =>
-                                setState(() => _selectedSchedule = s),
-                          ),
-                        ),
-                  ),
-                ],
-              ],
             ),
           ),
-          const SizedBox(height: 12),
-          // ── Grid ──────────────────────────────────────────────────────────
+          // ── Tabs ────────────────────────────────────────────────────────
           Expanded(
-            child: _selectedSchedule == null
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.table_chart_outlined,
-                            size: 64, color: Colors.grey.shade300),
-                        const SizedBox(height: 12),
-                        Text(
-                          _selectedTurma == null
-                              ? 'Seleccione uma turma'
-                              : 'Seleccione um horário',
-                          style: TextStyle(color: Colors.grey.shade500),
-                        ),
-                      ],
-                    ),
-                  )
-                : ref.watch(_gridProvider(_selectedSchedule!.id)).when(
-                      loading: () =>
-                          const Center(child: CircularProgressIndicator()),
-                      error: (e, _) => Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.error_outline,
-                                size: 48, color: AppTheme.danger),
-                            const SizedBox(height: 8),
-                            Text(e.toString()),
-                            const SizedBox(height: 12),
-                            ElevatedButton.icon(
-                              onPressed: () => ref.invalidate(
-                                  _gridProvider(_selectedSchedule!.id)),
-                              icon: const Icon(Icons.refresh),
-                              label: const Text('Tentar novamente'),
-                            ),
-                          ],
-                        ),
+            child: _selectedYear == null
+                ? const Center(child: CircularProgressIndicator())
+                : TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _RequirementsTab(
+                        yearId: _selectedYear!.id,
+                        canEdit: _canEdit,
                       ),
-                      data: (grid) => _buildGrid(grid),
-                    ),
+                      _GridTab(
+                        yearId: _selectedYear!.id,
+                        canEdit: _canEdit,
+                      ),
+                    ],
+                  ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildGrid(_GridData grid) {
-    // Build lookup: periodId × dayOfWeek → _Cell
-    final cellMap = <String, _Cell>{};
-    for (final cell in grid.cells) {
-      cellMap['${cell.periodId}_${cell.dayOfWeek}'] = cell;
+  // ── Generate for whole year ─────────────────────────────────────────────
+
+  Future<void> _generateForYear() async {
+    final yearId = _selectedYear!.id;
+    final schedules = ref.read(_schedulesForYearProvider(yearId)).valueOrNull;
+
+    if (schedules == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('A carregar turmas, aguarde e tente novamente.'),
+      ));
+      return;
     }
-
-    const colWidth = 130.0;
-    const rowHeaderWidth = 90.0;
-    const cellHeight = 88.0;
-
-    return SingleChildScrollView(
-      scrollDirection: Axis.vertical,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Day header row ────────────────────────────────────────────
-            Row(
-              children: [
-                SizedBox(width: rowHeaderWidth), // period label space
-                ..._days.asMap().entries.map((entry) {
-                  return Container(
-                    width: colWidth,
-                    height: 36,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: AppTheme.primary.withAlpha(20),
-                      border: Border(
-                        bottom: BorderSide(color: Colors.grey.shade300),
-                        right: BorderSide(color: Colors.grey.shade200),
-                      ),
-                    ),
-                    child: Text(
-                      _days[entry.key],
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: AppTheme.primary,
-                        fontSize: 13,
-                      ),
-                    ),
-                  );
-                }),
-              ],
-            ),
-            // ── Period rows ───────────────────────────────────────────────
-            ...grid.periods.map((period) {
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Period label
-                  Container(
-                    width: rowHeaderWidth,
-                    height: cellHeight,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: period.isBreak
-                          ? Colors.grey.shade100
-                          : Colors.white,
-                      border: Border(
-                        bottom: BorderSide(color: Colors.grey.shade200),
-                        right: BorderSide(color: Colors.grey.shade300),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          period.name,
-                          style: const TextStyle(
-                              fontSize: 11, fontWeight: FontWeight.bold),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          period.startTime.substring(0, 5),
-                          style: TextStyle(
-                              fontSize: 10, color: Colors.grey.shade600),
-                        ),
-                        Text(
-                          period.endTime.substring(0, 5),
-                          style: TextStyle(
-                              fontSize: 10, color: Colors.grey.shade600),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Day cells
-                  ...List.generate(5, (dayIdx) {
-                    final cell = cellMap['${period.id}_$dayIdx'];
-                    if (period.isBreak) {
-                      return _BreakCell(
-                          width: colWidth, height: cellHeight);
-                    }
-                    return _GridCell(
-                      width: colWidth,
-                      height: cellHeight,
-                      cell: cell,
-                      canEdit: _canEdit,
-                      onTap: _canEdit
-                          ? () => _showCellDialog(
-                                grid.scheduleId,
-                                period,
-                                dayIdx,
-                                cell,
-                              )
-                          : null,
-                    );
-                  }),
-                ],
-              );
-            }),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Cell edit dialog
-  // ---------------------------------------------------------------------------
-
-  Future<void> _showCellDialog(
-    String scheduleId,
-    _Period period,
-    int dayOfWeek,
-    _Cell? existing,
-  ) async {
-    String? subjectId = existing?.subjectId;
-    String? employeeId = existing?.employeeId;
-    final roomCtrl = TextEditingController(text: existing?.room ?? '');
-
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => _CellEditDialog(
-        period: period,
-        dayLabel: _days[dayOfWeek],
-        initialSubjectId: subjectId,
-        initialEmployeeId: employeeId,
-        roomController: roomCtrl,
-        onSave: (sid, eid, room) async {
-          final api = ref.read(apiClientProvider);
-          await api.post('/timetable/grid/cells', data: {
-            'schedule_id': scheduleId,
-            'day_of_week': dayOfWeek,
-            'period_id': period.id,
-            'subject_id': sid,
-            'employee_id': eid,
-            'room': room?.isEmpty == true ? null : room,
-          });
-        },
-        onClear: existing != null
-            ? () async {
-                final api = ref.read(apiClientProvider);
-                await api.delete('/timetable/grid/cells/${existing.id}');
-              }
-            : null,
-      ),
-    );
-
-    if (result == true) {
-      ref.invalidate(_gridProvider(scheduleId));
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Requirements sheet
-  // ---------------------------------------------------------------------------
-
-  void _showRequirementsSheet() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (ctx) => _RequirementsSheet(
-        scheduleId: _selectedSchedule!.id,
-        scheduleLabel: _selectedSchedule!.label ?? _selectedSchedule!.id,
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Generate + preview
-  // ---------------------------------------------------------------------------
-
-  Future<void> _generateAndPreview() async {
-    final scheduleId = _selectedSchedule!.id;
-
-    // Check requirements exist first
-    final reqs = ref.read(_requirementsProvider(scheduleId)).valueOrNull;
-    if (reqs != null && reqs.isEmpty) {
-      if (!mounted) return;
+    if (schedules.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text(
-            'Adicione requisitos primeiro (botão "Requisitos" na barra de ferramentas).'),
+            'Nenhuma turma tem horário lectivo criado para este ano.'),
       ));
       return;
     }
 
-    // Show loading overlay
+    await _generateAndPreview(schedules);
+  }
+
+  Future<void> _generateAndPreview(List<_ScheduleItem> schedules) async {
+    final scheduleIds = schedules.map((s) => s.id).toList();
+
     if (!mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => const AlertDialog(
+      builder: (ctx) => AlertDialog(
         content: SizedBox(
-          width: 200,
+          width: 220,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('A gerar horário…', textAlign: TextAlign.center),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              const Text('A gerar horário…', textAlign: TextAlign.center),
+              const SizedBox(height: 4),
+              Text(
+                'Solver verifica conflitos entre ${schedules.length} turma(s).',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
             ],
           ),
         ),
@@ -725,9 +552,7 @@ class _TimetableScreenState extends ConsumerState<TimetableScreen> {
     try {
       final raw = await ref.read(apiClientProvider).post(
         '/timetable/generate',
-        data: {
-          'schedule_ids': [scheduleId],
-        },
+        data: {'schedule_ids': scheduleIds},
       ) as Map<String, dynamic>;
       result = _GenerateResult(
         status: raw['status'] as String,
@@ -751,16 +576,23 @@ class _TimetableScreenState extends ConsumerState<TimetableScreen> {
       return;
     }
 
-    // Load periods for grid display
-    final periodsAsync = ref.read(_periodsListProvider);
-    final periods = periodsAsync.valueOrNull ?? [];
+    // Load periods for the preview grid
+    List<_Period> periods = [];
+    try {
+      final raw = await ref
+          .read(apiClientProvider)
+          .get('/timetable/periods') as List;
+      periods = raw
+          .map((e) => _Period.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {}
 
     if (!mounted) return;
     final accepted = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => _PreviewDialog(
-        scheduleId: scheduleId,
+        schedules: schedules,
         result: result!,
         periods: periods,
       ),
@@ -769,43 +601,549 @@ class _TimetableScreenState extends ConsumerState<TimetableScreen> {
     if (accepted == true) {
       try {
         await ref.read(apiClientProvider).post('/timetable/apply', data: {
-          'schedule_ids': [scheduleId],
+          'schedule_ids': scheduleIds,
           'cells': result!.cells.map((c) => c.toJson()).toList(),
           'replace_existing': true,
         });
-        ref.invalidate(_gridProvider(scheduleId));
+        for (final id in scheduleIds) {
+          ref.invalidate(_gridProvider(id));
+        }
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Horário aplicado com sucesso'),
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+              'Horário aplicado: ${result!.cells.length} aulas em '
+              '${schedules.length} turma(s)',
+            ),
             backgroundColor: Colors.green,
           ));
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Erro ao aplicar: $e')),
-          );
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('Erro ao aplicar: $e')));
         }
       }
     }
   }
-
-  // ---------------------------------------------------------------------------
-  // Periods management dialog
-  // ---------------------------------------------------------------------------
 
   void _showPeriodsDialog() {
     showDialog(
       context: context,
       builder: (ctx) => _PeriodsDialog(
         canEdit: _canEdit,
-        onChanged: () {
-          if (_selectedSchedule != null) {
-            ref.invalidate(_gridProvider(_selectedSchedule!.id));
-          }
-        },
+        onChanged: () {},
       ),
     );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tab 0 — Requirements: all turmas for the year
+// ---------------------------------------------------------------------------
+
+class _RequirementsTab extends ConsumerWidget {
+  final String yearId;
+  final bool canEdit;
+  const _RequirementsTab({required this.yearId, required this.canEdit});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final schedulesAsync = ref.watch(_schedulesForYearProvider(yearId));
+
+    return schedulesAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, color: AppTheme.danger, size: 40),
+            const SizedBox(height: 8),
+            Text('Erro: $e'),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: () => ref.invalidate(_schedulesForYearProvider(yearId)),
+              icon: const Icon(Icons.refresh),
+              label: const Text('Tentar novamente'),
+            ),
+          ],
+        ),
+      ),
+      data: (schedules) {
+        if (schedules.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.list_alt_outlined,
+                    size: 56, color: Colors.grey.shade300),
+                const SizedBox(height: 12),
+                const Text('Nenhuma turma tem horário lectivo neste ano.'),
+                const SizedBox(height: 6),
+                Text(
+                  'Vá a Académico → Turmas para criar horários lectivos.',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          );
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 80),
+          itemCount: schedules.length,
+          itemBuilder: (ctx, i) => _TurmaRequirementsCard(
+            schedule: schedules[i],
+            canEdit: canEdit,
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Per-turma expandable requirement card
+// ---------------------------------------------------------------------------
+
+class _TurmaRequirementsCard extends ConsumerStatefulWidget {
+  final _ScheduleItem schedule;
+  final bool canEdit;
+  const _TurmaRequirementsCard(
+      {required this.schedule, required this.canEdit});
+
+  @override
+  ConsumerState<_TurmaRequirementsCard> createState() =>
+      _TurmaRequirementsCardState();
+}
+
+class _TurmaRequirementsCardState
+    extends ConsumerState<_TurmaRequirementsCard> {
+  @override
+  Widget build(BuildContext context) {
+    final reqsAsync = ref.watch(_requirementsProvider(widget.schedule.id));
+
+    final totalPeriods = reqsAsync.valueOrNull
+            ?.fold<int>(0, (s, r) => s + r.periodsPerWeek) ??
+        0;
+    final reqCount = reqsAsync.valueOrNull?.length ?? 0;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: ExpansionTile(
+        initiallyExpanded: true,
+        tilePadding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+        title: Text(
+          widget.schedule.turmaName.isNotEmpty
+              ? widget.schedule.turmaName
+              : widget.schedule.id,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+        ),
+        subtitle: reqsAsync.when(
+          data: (_) => Text(
+            '$reqCount disciplina(s) · $totalPeriods aulas/semana',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+          loading: () => const Text('A carregar…',
+              style: TextStyle(fontSize: 12)),
+          error: (_, __) => const Text('Erro ao carregar',
+              style: TextStyle(fontSize: 12, color: AppTheme.danger)),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (widget.canEdit)
+              IconButton(
+                icon: const Icon(Icons.add_circle_outline,
+                    color: AppTheme.primary),
+                tooltip: 'Adicionar requisito',
+                onPressed: () => _addReq(context),
+              ),
+            const Icon(Icons.expand_more),
+          ],
+        ),
+        children: [
+          reqsAsync.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: LinearProgressIndicator(),
+            ),
+            error: (e, _) => Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('Erro: $e',
+                  style: const TextStyle(color: AppTheme.danger)),
+            ),
+            data: (reqs) => reqs.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                    child: Row(
+                      children: [
+                        Text(
+                          'Sem requisitos definidos.',
+                          style: TextStyle(color: Colors.grey.shade500),
+                        ),
+                        if (widget.canEdit) ...[
+                          const SizedBox(width: 12),
+                          TextButton.icon(
+                            onPressed: () => _addReq(context),
+                            icon: const Icon(Icons.add, size: 16),
+                            label: const Text('Adicionar'),
+                          ),
+                        ],
+                      ],
+                    ),
+                  )
+                : Column(
+                    children: [
+                      ...reqs.map(
+                        (req) => _RequirementTile(
+                          req: req,
+                          onEdit: widget.canEdit
+                              ? () => _editReq(context, req)
+                              : () {},
+                          onDelete: widget.canEdit
+                              ? () => _deleteReq(context, req)
+                              : () {},
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _addReq(BuildContext context) async {
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => _AddRequirementDialog(
+        scheduleId: widget.schedule.id,
+        existing: null,
+      ),
+    );
+    if (saved == true) {
+      ref.invalidate(_requirementsProvider(widget.schedule.id));
+    }
+  }
+
+  Future<void> _editReq(BuildContext context, _Requirement req) async {
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => _AddRequirementDialog(
+        scheduleId: widget.schedule.id,
+        existing: req,
+      ),
+    );
+    if (saved == true) {
+      ref.invalidate(_requirementsProvider(widget.schedule.id));
+    }
+  }
+
+  Future<void> _deleteReq(BuildContext context, _Requirement req) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remover Requisito'),
+        content: Text(
+          'Remover "${req.subjectName ?? req.subjectId}" '
+          '(${req.periodsPerWeek}×/semana)?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppTheme.danger),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Remover'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      try {
+        await ref
+            .read(apiClientProvider)
+            .delete('/timetable/requirements/${req.id}');
+        ref.invalidate(_requirementsProvider(widget.schedule.id));
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('Erro: $e')));
+        }
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tab 1 — Grid: turma selector + week grid
+// ---------------------------------------------------------------------------
+
+class _GridTab extends ConsumerStatefulWidget {
+  final String yearId;
+  final bool canEdit;
+  const _GridTab({required this.yearId, required this.canEdit});
+
+  @override
+  ConsumerState<_GridTab> createState() => _GridTabState();
+}
+
+class _GridTabState extends ConsumerState<_GridTab> {
+  String? _selectedScheduleId;
+  static const _days = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex'];
+
+  @override
+  Widget build(BuildContext context) {
+    final schedulesAsync = ref.watch(_schedulesForYearProvider(widget.yearId));
+
+    return Column(
+      children: [
+        // ── Turma selector ─────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: schedulesAsync.when(
+            loading: () => const LinearProgressIndicator(),
+            error: (e, _) => Text('Erro: $e',
+                style: const TextStyle(color: AppTheme.danger)),
+            data: (schedules) {
+              if (schedules.isEmpty) {
+                return Text(
+                  'Nenhuma turma com horário neste ano.',
+                  style: TextStyle(color: Colors.grey.shade600),
+                );
+              }
+              // Ensure selected id still valid in new list
+              final valid = schedules
+                  .where((s) => s.id == _selectedScheduleId)
+                  .firstOrNull;
+              return DropdownButtonFormField<String>(
+                value: valid?.id,
+                decoration: const InputDecoration(
+                  labelText: 'Turma',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+                items: schedules
+                    .map((s) => DropdownMenuItem(
+                          value: s.id,
+                          child: Text(
+                            s.turmaName.isNotEmpty ? s.turmaName : s.id,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ))
+                    .toList(),
+                onChanged: (id) =>
+                    setState(() => _selectedScheduleId = id),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+        // ── Grid ───────────────────────────────────────────────────────
+        Expanded(
+          child: _selectedScheduleId == null
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.table_chart_outlined,
+                          size: 64, color: Colors.grey.shade300),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Seleccione uma turma',
+                        style: TextStyle(color: Colors.grey.shade500),
+                      ),
+                    ],
+                  ),
+                )
+              : ref
+                  .watch(_gridProvider(_selectedScheduleId!))
+                  .when(
+                    loading: () =>
+                        const Center(child: CircularProgressIndicator()),
+                    error: (e, _) => Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.error_outline,
+                              size: 48, color: AppTheme.danger),
+                          const SizedBox(height: 8),
+                          Text(e.toString()),
+                          const SizedBox(height: 12),
+                          ElevatedButton.icon(
+                            onPressed: () => ref
+                                .invalidate(_gridProvider(_selectedScheduleId!)),
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Tentar novamente'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    data: _buildGrid,
+                  ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGrid(_GridData grid) {
+    final cellMap = <String, _Cell>{};
+    for (final cell in grid.cells) {
+      cellMap['${cell.periodId}_${cell.dayOfWeek}'] = cell;
+    }
+
+    const colWidth = 130.0;
+    const rowHeaderWidth = 90.0;
+    const cellHeight = 88.0;
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.vertical,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Day header row
+            Row(
+              children: [
+                const SizedBox(width: rowHeaderWidth),
+                ..._days.asMap().entries.map((entry) => Container(
+                      width: colWidth,
+                      height: 36,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withAlpha(20),
+                        border: Border(
+                          bottom: BorderSide(color: Colors.grey.shade300),
+                          right: BorderSide(color: Colors.grey.shade200),
+                        ),
+                      ),
+                      child: Text(
+                        _days[entry.key],
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.primary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    )),
+              ],
+            ),
+            // Period rows
+            ...grid.periods.map((period) => Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: rowHeaderWidth,
+                      height: cellHeight,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: period.isBreak
+                            ? Colors.grey.shade100
+                            : Colors.white,
+                        border: Border(
+                          bottom: BorderSide(color: Colors.grey.shade200),
+                          right: BorderSide(color: Colors.grey.shade300),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            period.name,
+                            style: const TextStyle(
+                                fontSize: 11, fontWeight: FontWeight.bold),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            period.startTime.substring(0, 5),
+                            style: TextStyle(
+                                fontSize: 10, color: Colors.grey.shade600),
+                          ),
+                          Text(
+                            period.endTime.substring(0, 5),
+                            style: TextStyle(
+                                fontSize: 10, color: Colors.grey.shade600),
+                          ),
+                        ],
+                      ),
+                    ),
+                    ...List.generate(5, (dayIdx) {
+                      if (period.isBreak) {
+                        return _BreakCell(
+                            width: colWidth, height: cellHeight);
+                      }
+                      final cell = cellMap['${period.id}_$dayIdx'];
+                      return _GridCell(
+                        width: colWidth,
+                        height: cellHeight,
+                        cell: cell,
+                        canEdit: widget.canEdit,
+                        onTap: widget.canEdit
+                            ? () => _showCellDialog(
+                                  grid.scheduleId,
+                                  period,
+                                  dayIdx,
+                                  cell,
+                                )
+                            : null,
+                      );
+                    }),
+                  ],
+                )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showCellDialog(
+    String scheduleId,
+    _Period period,
+    int dayOfWeek,
+    _Cell? existing,
+  ) async {
+    final roomCtrl = TextEditingController(text: existing?.room ?? '');
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => _CellEditDialog(
+        period: period,
+        dayLabel: _days[dayOfWeek],
+        initialSubjectId: existing?.subjectId,
+        initialEmployeeId: existing?.employeeId,
+        roomController: roomCtrl,
+        onSave: (sid, eid, room) async {
+          await ref.read(apiClientProvider).post('/timetable/grid/cells', data: {
+            'schedule_id': scheduleId,
+            'day_of_week': dayOfWeek,
+            'period_id': period.id,
+            'subject_id': sid,
+            'employee_id': eid,
+            'room': room?.isEmpty == true ? null : room,
+          });
+        },
+        onClear: existing != null
+            ? () async {
+                await ref
+                    .read(apiClientProvider)
+                    .delete('/timetable/grid/cells/${existing.id}');
+              }
+            : null,
+      ),
+    );
+
+    if (result == true) {
+      ref.invalidate(_gridProvider(scheduleId));
+    }
   }
 }
 
@@ -873,9 +1211,7 @@ class _GridCell extends StatelessWidget {
           border: Border(
             bottom: BorderSide(color: Colors.grey.shade200),
             right: BorderSide(color: Colors.grey.shade200),
-            left: isEmpty
-                ? BorderSide.none
-                : BorderSide(color: color, width: 3),
+            left: isEmpty ? BorderSide.none : BorderSide(color: color, width: 3),
           ),
         ),
         child: isEmpty
@@ -899,8 +1235,7 @@ class _GridCell extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (cell!.subjectCode != null &&
-                        cell!.subjectName != null)
+                    if (cell!.subjectCode != null && cell!.subjectName != null)
                       Text(
                         cell!.subjectName!,
                         style: TextStyle(
@@ -999,8 +1334,7 @@ class _CellEditDialogState extends ConsumerState<_CellEditDialog> {
             ],
             subjectsAsync.when(
               loading: () => const LinearProgressIndicator(),
-              error: (e, _) =>
-                  Text('Erro ao carregar disciplinas: $e'),
+              error: (e, _) => Text('Erro ao carregar disciplinas: $e'),
               data: (subjects) => DropdownButtonFormField<String>(
                 value: _subjectId,
                 isExpanded: true,
@@ -1026,8 +1360,7 @@ class _CellEditDialogState extends ConsumerState<_CellEditDialog> {
             const SizedBox(height: 12),
             teachersAsync.when(
               loading: () => const LinearProgressIndicator(),
-              error: (e, _) =>
-                  Text('Erro ao carregar professores: $e'),
+              error: (e, _) => Text('Erro ao carregar professores: $e'),
               data: (teachers) => DropdownButtonFormField<String>(
                 value: _employeeId,
                 isExpanded: true,
@@ -1041,8 +1374,7 @@ class _CellEditDialogState extends ConsumerState<_CellEditDialog> {
                       value: null, child: Text('— Nenhum —')),
                   ...teachers.map((t) => DropdownMenuItem(
                         value: t.id,
-                        child: Text(t.name,
-                            overflow: TextOverflow.ellipsis),
+                        child: Text(t.name, overflow: TextOverflow.ellipsis),
                       )),
                 ],
                 onChanged: (v) => setState(() => _employeeId = v),
@@ -1074,9 +1406,8 @@ class _CellEditDialogState extends ConsumerState<_CellEditDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             TextButton(
-              onPressed: _saving
-                  ? null
-                  : () => Navigator.of(context).pop(false),
+              onPressed:
+                  _saving ? null : () => Navigator.of(context).pop(false),
               child: const Text('Cancelar'),
             ),
             const SizedBox(width: 8),
@@ -1101,8 +1432,7 @@ class _CellEditDialogState extends ConsumerState<_CellEditDialog> {
       _error = null;
     });
     try {
-      await widget.onSave(
-          _subjectId, _employeeId, widget.roomController.text);
+      await widget.onSave(_subjectId, _employeeId, widget.roomController.text);
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       setState(() {
@@ -1130,7 +1460,7 @@ class _CellEditDialogState extends ConsumerState<_CellEditDialog> {
 }
 
 // ---------------------------------------------------------------------------
-// Periods management dialog (admin: create/edit periods)
+// Periods management dialog
 // ---------------------------------------------------------------------------
 
 class _PeriodsDialog extends ConsumerStatefulWidget {
@@ -1364,178 +1694,6 @@ class _PeriodsDialogState extends ConsumerState<_PeriodsDialog> {
 }
 
 // ---------------------------------------------------------------------------
-// Requirements bottom sheet
-// ---------------------------------------------------------------------------
-
-class _RequirementsSheet extends ConsumerStatefulWidget {
-  final String scheduleId;
-  final String scheduleLabel;
-  const _RequirementsSheet({
-    required this.scheduleId,
-    required this.scheduleLabel,
-  });
-
-  @override
-  ConsumerState<_RequirementsSheet> createState() => _RequirementsSheetState();
-}
-
-class _RequirementsSheetState extends ConsumerState<_RequirementsSheet> {
-  @override
-  Widget build(BuildContext context) {
-    final async = ref.watch(_requirementsProvider(widget.scheduleId));
-
-    return DraggableScrollableSheet(
-      initialChildSize: 0.85,
-      minChildSize: 0.5,
-      maxChildSize: 0.95,
-      expand: false,
-      builder: (ctx, scrollCtrl) => Column(
-        children: [
-          // Handle + title
-          Container(
-            padding: const EdgeInsets.fromLTRB(20, 12, 8, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: Container(
-                          width: 40,
-                          height: 4,
-                          margin: const EdgeInsets.only(bottom: 12),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade300,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ),
-                      Text(
-                        'Requisitos — ${widget.scheduleLabel}',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                      ),
-                      Text(
-                        'Defina as disciplinas, professores e nº de aulas por semana',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: Colors.grey.shade600),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.add_circle_outline),
-                  tooltip: 'Adicionar requisito',
-                  color: AppTheme.primary,
-                  onPressed: () => _showAddDialog(null),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: async.when(
-              loading: () =>
-                  const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('Erro: $e')),
-              data: (reqs) => reqs.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.list_alt_outlined,
-                              size: 56, color: Colors.grey.shade300),
-                          const SizedBox(height: 12),
-                          Text(
-                            'Nenhum requisito definido.',
-                            style:
-                                TextStyle(color: Colors.grey.shade500),
-                          ),
-                          const SizedBox(height: 8),
-                          FilledButton.icon(
-                            onPressed: () => _showAddDialog(null),
-                            icon: const Icon(Icons.add),
-                            label: const Text('Adicionar primeiro requisito'),
-                          ),
-                        ],
-                      ),
-                    )
-                  : ListView.separated(
-                      controller: scrollCtrl,
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
-                      itemCount: reqs.length,
-                      separatorBuilder: (_, __) =>
-                          const SizedBox(height: 4),
-                      itemBuilder: (ctx, i) =>
-                          _RequirementTile(
-                            req: reqs[i],
-                            onEdit: () => _showAddDialog(reqs[i]),
-                            onDelete: () => _delete(reqs[i]),
-                          ),
-                    ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _showAddDialog(_Requirement? existing) async {
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => _AddRequirementDialog(
-        scheduleId: widget.scheduleId,
-        existing: existing,
-      ),
-    );
-    if (saved == true) {
-      ref.invalidate(_requirementsProvider(widget.scheduleId));
-    }
-  }
-
-  Future<void> _delete(_Requirement req) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Remover Requisito'),
-        content: Text(
-          'Remover "${req.subjectName ?? req.subjectId}" '
-          '(${req.periodsPerWeek}×/semana)?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppTheme.danger),
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Remover'),
-          ),
-        ],
-      ),
-    );
-    if (confirm == true) {
-      try {
-        await ref
-            .read(apiClientProvider)
-            .delete('/timetable/requirements/${req.id}');
-        ref.invalidate(_requirementsProvider(widget.scheduleId));
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('Erro: $e')));
-        }
-      }
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Requirement tile
 // ---------------------------------------------------------------------------
 
@@ -1557,46 +1715,46 @@ class _RequirementTile extends StatelessWidget {
       'afternoon' => '🌆 Tarde',
       _ => null,
     };
-    return Card(
-      margin: EdgeInsets.zero,
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: color.withAlpha(30),
-          child: Text(
-            req.periodsPerWeek.toString(),
-            style: TextStyle(
-                color: color, fontWeight: FontWeight.bold, fontSize: 16),
+    return ListTile(
+      dense: true,
+      leading: CircleAvatar(
+        backgroundColor: color.withAlpha(30),
+        child: Text(
+          req.periodsPerWeek.toString(),
+          style: TextStyle(
+              color: color, fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+      ),
+      title: Text(
+        req.subjectCode != null
+            ? '${req.subjectCode} — ${req.subjectName ?? ''}'
+            : (req.subjectName ?? req.subjectId),
+        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+      ),
+      subtitle: Text(
+        [
+          req.employeeName ?? 'Professor não definido',
+          '${req.periodsPerWeek}×/sem',
+          if (req.allowDoublePeriod) 'Dupla',
+          if (timeLabel != null) timeLabel,
+        ].join(' · '),
+        style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.edit_outlined, size: 17),
+            onPressed: onEdit,
+            visualDensity: VisualDensity.compact,
           ),
-        ),
-        title: Text(
-          req.subjectCode != null
-              ? '${req.subjectCode} — ${req.subjectName ?? ''}'
-              : (req.subjectName ?? req.subjectId),
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        subtitle: Text(
-          [
-            req.employeeName ?? 'Professor não definido',
-            '${req.periodsPerWeek}×/semana',
-            if (req.allowDoublePeriod) 'Dupla permitida',
-            if (timeLabel != null) timeLabel,
-          ].join(' · '),
-          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.edit_outlined, size: 18),
-              onPressed: onEdit,
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline,
-                  size: 18, color: AppTheme.danger),
-              onPressed: onDelete,
-            ),
-          ],
-        ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline,
+                size: 17, color: AppTheme.danger),
+            onPressed: onDelete,
+            visualDensity: VisualDensity.compact,
+          ),
+        ],
       ),
     );
   }
@@ -1623,7 +1781,7 @@ class _AddRequirementDialogState
   String? _employeeId;
   int _periodsPerWeek = 2;
   bool _allowDouble = false;
-  String? _preferredTime; // null | 'morning' | 'afternoon'
+  String? _preferredTime;
   bool _saving = false;
   String? _error;
 
@@ -1690,8 +1848,9 @@ class _AddRequirementDialogState
                             ),
                           ))
                       .toList(),
-                  onChanged:
-                      isEdit ? null : (v) => setState(() => _subjectId = v),
+                  onChanged: isEdit
+                      ? null
+                      : (v) => setState(() => _subjectId = v),
                 ),
               ),
               const SizedBox(height: 12),
@@ -1726,8 +1885,7 @@ class _AddRequirementDialogState
                   IconButton(
                     icon: const Icon(Icons.remove_circle_outline),
                     onPressed: _periodsPerWeek > 1
-                        ? () =>
-                            setState(() => _periodsPerWeek--)
+                        ? () => setState(() => _periodsPerWeek--)
                         : null,
                   ),
                   Text(
@@ -1738,8 +1896,7 @@ class _AddRequirementDialogState
                   IconButton(
                     icon: const Icon(Icons.add_circle_outline),
                     onPressed: _periodsPerWeek < 10
-                        ? () =>
-                            setState(() => _periodsPerWeek++)
+                        ? () => setState(() => _periodsPerWeek++)
                         : null,
                   ),
                 ],
@@ -1747,7 +1904,8 @@ class _AddRequirementDialogState
               CheckboxListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Permitir aula dupla (2 períodos seguidos)',
+                title: const Text(
+                    'Permitir aula dupla (2 períodos seguidos)',
                     style: TextStyle(fontSize: 13)),
                 value: _allowDouble,
                 onChanged: (v) =>
@@ -1773,9 +1931,8 @@ class _AddRequirementDialogState
       ),
       actions: [
         TextButton(
-          onPressed: _saving
-              ? null
-              : () => Navigator.of(context).pop(false),
+          onPressed:
+              _saving ? null : () => Navigator.of(context).pop(false),
           child: const Text('Cancelar'),
         ),
         FilledButton(
@@ -1806,16 +1963,15 @@ class _AddRequirementDialogState
     });
     try {
       final api = ref.read(apiClientProvider);
-      final body = {
-        'schedule_id': widget.scheduleId,
-        'subject_id': _subjectId,
-        'employee_id': _employeeId,
-        'periods_per_week': _periodsPerWeek,
-        'allow_double_period': _allowDouble,
-        'preferred_time_of_day': _preferredTime,
-      };
       if (widget.existing == null) {
-        await api.post('/timetable/requirements', data: body);
+        await api.post('/timetable/requirements', data: {
+          'schedule_id': widget.scheduleId,
+          'subject_id': _subjectId,
+          'employee_id': _employeeId,
+          'periods_per_week': _periodsPerWeek,
+          'allow_double_period': _allowDouble,
+          'preferred_time_of_day': _preferredTime,
+        });
       } else {
         await api.patch(
           '/timetable/requirements/${widget.existing!.id}',
@@ -1838,15 +1994,15 @@ class _AddRequirementDialogState
 }
 
 // ---------------------------------------------------------------------------
-// Generate preview dialog
+// Generate preview dialog — multi-schedule with turma selector
 // ---------------------------------------------------------------------------
 
 class _PreviewDialog extends StatefulWidget {
-  final String scheduleId;
+  final List<_ScheduleItem> schedules;
   final _GenerateResult result;
   final List<_Period> periods;
   const _PreviewDialog({
-    required this.scheduleId,
+    required this.schedules,
     required this.result,
     required this.periods,
   });
@@ -1857,31 +2013,45 @@ class _PreviewDialog extends StatefulWidget {
 
 class _PreviewDialogState extends State<_PreviewDialog> {
   bool _showConflicts = true;
+  String? _viewingScheduleId;
   static const _days = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex'];
 
   @override
-  Widget build(BuildContext context) {
-    final status = widget.result.status;
-    final conflicts = widget.result.conflicts;
-    final cells = widget.result.cells;
+  void initState() {
+    super.initState();
+    if (widget.schedules.isNotEmpty) {
+      _viewingScheduleId = widget.schedules.first.id;
+    }
+  }
 
-    // Convert GenCells to display cells (fake id = -1)
-    final fakeCells = cells.map((c) => _Cell(
-          id: -1,
-          dayOfWeek: c.dayOfWeek,
-          periodId: c.periodId,
-          subjectId: c.subjectId,
-          subjectName: c.subjectName,
-          employeeId: c.employeeId,
-          employeeName: c.employeeName,
-        )).toList();
+  @override
+  Widget build(BuildContext context) {
+    final allCells = widget.result.cells;
+    final conflicts = widget.result.conflicts;
+    final status = widget.result.status;
+
+    // Filter cells for the currently-viewed schedule
+    final viewCells = _viewingScheduleId == null
+        ? allCells
+        : allCells.where((c) => c.scheduleId == _viewingScheduleId).toList();
+
+    final fakeCells = viewCells
+        .map((c) => _Cell(
+              id: -1,
+              dayOfWeek: c.dayOfWeek,
+              periodId: c.periodId,
+              subjectId: c.subjectId,
+              subjectName: c.subjectName,
+              employeeId: c.employeeId,
+              employeeName: c.employeeName,
+            ))
+        .toList();
 
     final cellMap = <String, _Cell>{};
     for (final cell in fakeCells) {
       cellMap['${cell.periodId}_${cell.dayOfWeek}'] = cell;
     }
 
-    // Status badge
     final (statusLabel, statusColor) = switch (status) {
       'optimal' => ('Óptimo — sem conflitos', Colors.green),
       'feasible' => ('Solução encontrada', Colors.green),
@@ -1913,7 +2083,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
               ),
             const SizedBox(width: 8),
             FilledButton.icon(
-              onPressed: cells.isEmpty
+              onPressed: allCells.isEmpty
                   ? null
                   : () => Navigator.of(context).pop(true),
               icon: const Icon(Icons.check),
@@ -1924,7 +2094,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
         ),
         body: Column(
           children: [
-            // Status banner
+            // ── Status banner ────────────────────────────────────────────
             Container(
               width: double.infinity,
               padding:
@@ -1947,7 +2117,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
                   ),
                   const Spacer(),
                   Text(
-                    '${cells.length} aulas alocadas',
+                    '${allCells.length} aulas · ${widget.schedules.length} turma(s)',
                     style: TextStyle(
                         fontSize: 12, color: Colors.grey.shade600),
                   ),
@@ -1955,7 +2125,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
               ),
             ),
 
-            // Conflicts panel
+            // ── Conflicts panel ──────────────────────────────────────────
             if (conflicts.isNotEmpty && _showConflicts)
               Container(
                 width: double.infinity,
@@ -2003,9 +2173,37 @@ class _PreviewDialogState extends State<_PreviewDialog> {
                 ),
               ),
 
-            // Grid (read-only preview)
+            // ── Turma selector (multi-schedule) ─────────────────────────
+            if (widget.schedules.length > 1)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: DropdownButtonFormField<String>(
+                  value: _viewingScheduleId,
+                  decoration: const InputDecoration(
+                    labelText: 'Ver turma',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                  items: widget.schedules
+                      .map((s) => DropdownMenuItem(
+                            value: s.id,
+                            child: Text(
+                              '${s.turmaName.isNotEmpty ? s.turmaName : s.id}'
+                              ' (${allCells.where((c) => c.scheduleId == s.id).length} aulas)',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ))
+                      .toList(),
+                  onChanged: (id) =>
+                      setState(() => _viewingScheduleId = id),
+                ),
+              ),
+
+            // ── Grid preview ─────────────────────────────────────────────
             Expanded(
-              child: cells.isEmpty
+              child: allCells.isEmpty
                   ? Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -2018,7 +2216,8 @@ class _PreviewDialogState extends State<_PreviewDialog> {
                           const SizedBox(height: 8),
                           Text(
                             'Verifique os requisitos e a disponibilidade dos professores.',
-                            style: TextStyle(color: Colors.grey.shade600),
+                            style:
+                                TextStyle(color: Colors.grey.shade600),
                           ),
                         ],
                       ),
@@ -2044,7 +2243,6 @@ class _PreviewDialogState extends State<_PreviewDialog> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Day header
             Row(
               children: [
                 const SizedBox(width: rowHeaderWidth),
@@ -2070,7 +2268,6 @@ class _PreviewDialogState extends State<_PreviewDialog> {
                     )),
               ],
             ),
-            // Period rows
             ...periods.map((period) => Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -2094,7 +2291,8 @@ class _PreviewDialogState extends State<_PreviewDialog> {
                         children: [
                           Text(period.name,
                               style: const TextStyle(
-                                  fontSize: 11, fontWeight: FontWeight.bold),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis),
                           Text(period.startTime.substring(0, 5),
@@ -2109,8 +2307,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
                         return _BreakCell(
                             width: colWidth, height: cellHeight);
                       }
-                      final cell =
-                          cellMap['${period.id}_$dayIdx'];
+                      final cell = cellMap['${period.id}_$dayIdx'];
                       return _GridCell(
                         width: colWidth,
                         height: cellHeight,
