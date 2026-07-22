@@ -110,7 +110,7 @@ _SEGMENT_DEFAULTS: dict[str, dict] = {
     },
     "full": {
         "caderneta": True,
-        "evaluations": True,
+        "evaluations": False,     # developmental milestones are preschool-only
         "activities": True,
         "meal_orders": True,
         "immunizations": True,

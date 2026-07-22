@@ -12,3 +12,4 @@ python-multipart==0.0.20
 aiofiles==24.1.0
 Pillow==11.0.0
 python-dotenv==1.0.1
+ortools==9.11.4210

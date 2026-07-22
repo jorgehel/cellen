@@ -94,3 +94,97 @@ class TeacherSlot(BaseModel):
     turma_name: Optional[str] = None
     room: Optional[str] = None
     schedule_id: uuid.UUID
+
+
+# ---------------------------------------------------------------------------
+# Timetable requirements (solver input cards)
+# ---------------------------------------------------------------------------
+
+class RequirementCreate(BaseModel):
+    schedule_id: uuid.UUID
+    subject_id: uuid.UUID
+    employee_id: uuid.UUID
+    periods_per_week: int = 1
+    allow_double_period: bool = False
+    preferred_time_of_day: Optional[str] = None   # 'morning' | 'afternoon' | None
+
+
+class RequirementUpdate(BaseModel):
+    employee_id: Optional[uuid.UUID] = None
+    periods_per_week: Optional[int] = None
+    allow_double_period: Optional[bool] = None
+    preferred_time_of_day: Optional[str] = None
+
+
+class RequirementResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    schedule_id: uuid.UUID
+    subject_id: uuid.UUID
+    subject_name: Optional[str] = None
+    subject_code: Optional[str] = None
+    employee_id: uuid.UUID
+    employee_name: Optional[str] = None
+    periods_per_week: int
+    allow_double_period: bool
+    preferred_time_of_day: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Teacher unavailability constraints
+# ---------------------------------------------------------------------------
+
+class TeacherConstraintCreate(BaseModel):
+    employee_id: uuid.UUID
+    day_of_week: int       # 0=Mon..4=Fri
+    period_id: uuid.UUID
+
+
+class TeacherConstraintResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    employee_id: uuid.UUID
+    day_of_week: int
+    period_id: uuid.UUID
+
+
+# ---------------------------------------------------------------------------
+# Solver generate / apply
+# ---------------------------------------------------------------------------
+
+class GenerateRequest(BaseModel):
+    """Run the solver for one or more class schedules simultaneously."""
+    schedule_ids: list[uuid.UUID]
+
+
+class GeneratedCell(BaseModel):
+    schedule_id: uuid.UUID
+    day_of_week: int
+    period_id: uuid.UUID
+    subject_id: uuid.UUID
+    subject_name: Optional[str] = None
+    employee_id: uuid.UUID
+    employee_name: Optional[str] = None
+
+
+class GenerateConflict(BaseModel):
+    requirement_id: uuid.UUID
+    subject_name: str
+    employee_name: str
+    periods_requested: int
+    periods_assigned: int
+    reason: str
+
+
+class GenerateResponse(BaseModel):
+    """Preview of the proposed timetable — nothing is written to DB yet."""
+    status: str   # 'optimal' | 'feasible' | 'partial' | 'infeasible'
+    cells: list[GeneratedCell]
+    conflicts: list[GenerateConflict]
+
+
+class ApplyRequest(BaseModel):
+    """Write a previously-previewed set of cells to the database."""
+    schedule_ids: list[uuid.UUID]
+    cells: list[GeneratedCell]
+    replace_existing: bool = True   # if True, clears existing slots first

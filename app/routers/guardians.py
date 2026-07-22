@@ -67,7 +67,7 @@ async def create_guardian(
         school_id=school_id,
         username=body.username,
         password_hash=hash_password(body.password),
-        role="parent",
+        roles=["parent"],
         guardian_id=guardian.id,
     )
     db.add(user)

@@ -145,7 +145,7 @@ async def create_school(
         school_id=school.id,
         username=body.admin_username,
         password_hash=hash_password(body.admin_password),
-        role="school_admin",
+        roles=["school_admin"],
         is_active=True,
     )
     db.add(admin_user)

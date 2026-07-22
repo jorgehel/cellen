@@ -255,7 +255,7 @@ async def create_user(
         school_id=school_id,
         username=body.username,
         password_hash=hash_password(body.password),
-        role=body.role,
+        roles=[body.role],
         is_active=body.is_active,
         employee_id=body.employee_id,
         guardian_id=body.guardian_id,
@@ -284,6 +284,8 @@ async def update_user(
     update_data = body.model_dump(exclude_unset=True)
     if "password" in update_data:
         update_data["password_hash"] = hash_password(update_data.pop("password"))
+    if "role" in update_data:
+        update_data["roles"] = [update_data.pop("role")]
 
     # Validate XOR constraint if both are being set
     new_employee_id = update_data.get("employee_id", user.employee_id)

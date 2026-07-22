@@ -72,7 +72,7 @@ async def create_employee(
         school_id=school_id,
         username=body.username,
         password_hash=hash_password(body.password),
-        role=role,
+        roles=[role],
         employee_id=employee.id,
     )
     db.add(user)

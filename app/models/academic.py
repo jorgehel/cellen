@@ -177,6 +177,77 @@ class ScheduleSlot(Base):
     subject = relationship("Subject", lazy="selectin", foreign_keys=[subject_id])
     period = relationship("TimetablePeriod", lazy="selectin", foreign_keys=[period_id])
 
+
+class TimetableRequirement(Base):
+    """
+    A solver 'card': subject X taught by teacher Y in schedule Z for N periods/week.
+    These are the inputs to the auto-generation engine.
+    One row per (schedule, subject, employee) combination.
+    """
+    __tablename__ = "timetable_requirements"
+    __table_args__ = (
+        UniqueConstraint(
+            "schedule_id", "subject_id", "employee_id",
+            name="uq_timetable_req_schedule_subject_employee",
+        ),
+        Index("ix_timetable_requirements_school_id", "school_id"),
+        Index("ix_timetable_requirements_schedule_id", "schedule_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    school_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("schools.id", ondelete="RESTRICT"), nullable=False
+    )
+    schedule_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("schedules.id", ondelete="CASCADE"), nullable=False
+    )
+    subject_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("subjects.id", ondelete="RESTRICT"), nullable=False
+    )
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="RESTRICT"), nullable=False
+    )
+    # How many periods per week this subject needs in this class
+    periods_per_week: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # Allow two consecutive periods on the same day (e.g. lab classes, PE)
+    allow_double_period: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Soft placement hint: 'morning' | 'afternoon' | None (any)
+    preferred_time_of_day: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    subject = relationship("Subject", lazy="selectin", foreign_keys=[subject_id])
+
+
+class TimetableTeacherConstraint(Base):
+    """
+    Marks a teacher as unavailable for a specific day+period slot.
+    Used by the solver to exclude those slots when scheduling.
+    """
+    __tablename__ = "timetable_teacher_constraints"
+    __table_args__ = (
+        UniqueConstraint(
+            "employee_id", "day_of_week", "period_id",
+            name="uq_timetable_teacher_constraint",
+        ),
+        Index("ix_timetable_teacher_constraints_school_id", "school_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("schools.id", ondelete="RESTRICT"), nullable=False
+    )
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="CASCADE"), nullable=False
+    )
+    day_of_week: Mapped[int] = mapped_column(Integer, nullable=False)   # 0=Mon..4=Fri
+    period_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("timetable_periods.id", ondelete="CASCADE"), nullable=False
+    )
+
     @property
     def activity_name(self) -> Optional[str]:
         return self.activity.name if self.activity else None
