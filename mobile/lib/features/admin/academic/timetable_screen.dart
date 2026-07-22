@@ -381,6 +381,7 @@ class _TimetableScreenState extends ConsumerState<TimetableScreen>
   _SchoolYear? _selectedYear;
   late TabController _tabController;
   bool? _lastCanEdit;
+  bool _isGenerating = false;
 
   bool get _isAdmin {
     final auth = ref.read(authProvider);
@@ -446,9 +447,15 @@ class _TimetableScreenState extends ConsumerState<TimetableScreen>
         actions: [
           if (_selectedYear != null && admin)
             IconButton(
-              icon: const Icon(Icons.auto_fix_high),
+              icon: _isGenerating
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.auto_fix_high),
               tooltip: 'Gerar horário para todas as turmas do ano',
-              onPressed: _generateForYear,
+              onPressed: _isGenerating ? null : _generateForYear,
             ),
           if (admin)
             IconButton(
@@ -607,6 +614,16 @@ class _TimetableScreenState extends ConsumerState<TimetableScreen>
   }
 
   Future<void> _generateAndPreview(List<_ScheduleItem> schedules) async {
+    if (_isGenerating) return;
+    setState(() => _isGenerating = true);
+    try {
+      await _doGenerateAndPreview(schedules);
+    } finally {
+      if (mounted) setState(() => _isGenerating = false);
+    }
+  }
+
+  Future<void> _doGenerateAndPreview(List<_ScheduleItem> schedules) async {
     final scheduleIds = schedules.map((s) => s.id).toList();
 
     if (!mounted) return;
@@ -715,12 +732,33 @@ class _TimetableScreenState extends ConsumerState<TimetableScreen>
     );
 
     if (accepted == true) {
+      // Show apply loading dialog so user has feedback
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => const AlertDialog(
+            content: SizedBox(
+              width: 220,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('A guardar horário…', textAlign: TextAlign.center),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
       try {
         await ref.read(apiClientProvider).post('/timetable/apply', data: {
           'schedule_ids': scheduleIds,
           'cells': result!.cells.map((c) => c.toJson()).toList(),
           'replace_existing': true,
         });
+        if (mounted) Navigator.of(context).pop(); // close apply dialog
         for (final id in scheduleIds) {
           ref.invalidate(_gridProvider(id));
         }
@@ -739,6 +777,7 @@ class _TimetableScreenState extends ConsumerState<TimetableScreen>
         }
       } catch (e) {
         if (mounted) {
+          Navigator.of(context).pop(); // close apply dialog
           ScaffoldMessenger.of(context)
               .showSnackBar(SnackBar(content: Text('Erro ao aplicar: $e')));
         }
