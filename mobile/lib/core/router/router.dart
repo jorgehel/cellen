@@ -404,7 +404,6 @@ const _pathFeatureMap = {
   '/parent/menu':              'meal_orders',
   '/parent/authorizations':    'trip_auth',
   '/parent/grades':            'report_cards',
-  '/appointments':             'appointments',
 };
 
 List<SidebarItem> _buildSidebarItems(Set<UserRole> roles, [School? school]) {
