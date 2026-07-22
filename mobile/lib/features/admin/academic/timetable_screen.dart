@@ -589,12 +589,14 @@ class _TimetableScreenState extends ConsumerState<TimetableScreen>
     final scheduleIds = schedules.map((s) => s.id).toList();
 
     if (!mounted) return;
+    // Use a navigatorKey-like approach: track if dialog is still open
+    var _dialogOpen = true;
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         content: SizedBox(
-          width: 220,
+          width: 260,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -607,11 +609,26 @@ class _TimetableScreenState extends ConsumerState<TimetableScreen>
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
               ),
+              const SizedBox(height: 12),
+              Text(
+                'Pode demorar até 20 segundos.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+              ),
             ],
           ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              _dialogOpen = false;
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('Cancelar'),
+          ),
+        ],
       ),
-    );
+    ).then((_) => _dialogOpen = false);
 
     _GenerateResult? result;
     String? error;
@@ -619,6 +636,12 @@ class _TimetableScreenState extends ConsumerState<TimetableScreen>
       final raw = await ref.read(apiClientProvider).post(
         '/timetable/generate',
         data: {'schedule_ids': scheduleIds},
+      ).timeout(
+        const Duration(seconds: 45),
+        onTimeout: () => throw Exception(
+          'O servidor demorou demasiado a responder. '
+          'Tente com menos turmas ou reduza o número de aulas.',
+        ),
       ) as Map<String, dynamic>;
       result = _GenerateResult(
         status: raw['status'] as String,
@@ -634,11 +657,17 @@ class _TimetableScreenState extends ConsumerState<TimetableScreen>
     }
 
     if (!mounted) return;
-    Navigator.of(context).pop(); // close loading dialog
+    final wasCancelled = !_dialogOpen;
+    if (_dialogOpen) Navigator.of(context).pop(); // close loading dialog
+
+    // If user pressed Cancelar while waiting, discard the result silently
+    if (wasCancelled) return;
 
     if (error != null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Erro: $error')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Erro: $error'),
+        duration: const Duration(seconds: 6),
+      ));
       return;
     }
 
@@ -675,12 +704,16 @@ class _TimetableScreenState extends ConsumerState<TimetableScreen>
           ref.invalidate(_gridProvider(id));
         }
         if (mounted) {
+          final hasConflicts = result!.conflicts.isNotEmpty;
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(
-              'Horário aplicado: ${result!.cells.length} aulas em '
-              '${schedules.length} turma(s)',
+              hasConflicts
+                  ? 'Horário parcial aplicado: ${result!.cells.length} aulas. '
+                    '${result!.conflicts.length} requisito(s) por ajustar manualmente.'
+                  : 'Horário aplicado: ${result!.cells.length} aulas em ${schedules.length} turma(s)',
             ),
-            backgroundColor: Colors.green,
+            backgroundColor: hasConflicts ? Colors.orange : Colors.green,
+            duration: Duration(seconds: hasConflicts ? 8 : 4),
           ));
         }
       } catch (e) {

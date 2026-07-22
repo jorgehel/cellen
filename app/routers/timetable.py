@@ -13,6 +13,8 @@ Endpoints:
 
   GET  /timetable/teacher                 — current teacher's own week view
 """
+import asyncio
+import functools
 import uuid
 from typing import Optional
 
@@ -684,8 +686,12 @@ async def generate_timetable(
         for p in db_periods
     ]
 
-    # Run solver (may take up to 30 s for large schools)
-    result = run_solver(solver_reqs, solver_periods, blocked)
+    # Run solver off the async event loop (it blocks for up to 15 s with OR-Tools)
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None,
+        functools.partial(run_solver, solver_reqs, solver_periods, blocked, 15.0),
+    )
 
     # Build response with enriched names
     period_map = {p.id: p for p in db_periods}

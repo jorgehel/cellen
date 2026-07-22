@@ -111,6 +111,7 @@ const _allFeatures = <_Feat>[
   _Feat('subjects',     'Disciplinas',                  'Cadastro de disciplinas e afectação por turma',                   _Cat.pedagogical, Icons.book_outlined),
   _Feat('report_cards', 'Boletins',                     'Geração e exportação de boletins escolares',                      _Cat.pedagogical, Icons.assignment_outlined),
   _Feat('appointments', 'Marcações',                    'Marcações e consultas com professores / coordenação',             _Cat.pedagogical, Icons.event_available_outlined),
+  _Feat('absences',     'Faltas de Funcionários',        'Registo de faltas e ausências do pessoal docente e não-docente',  _Cat.pedagogical, Icons.event_busy_outlined),
   // Saúde
   _Feat('health',       'Saúde',                        'Registos de saúde, febre, medicamentos e bem-estar',              _Cat.health, Icons.health_and_safety_outlined),
   _Feat('immunizations','Vacinação',                    'Calendário vacinal e registos de imunização',                     _Cat.health, Icons.vaccines_outlined),
@@ -128,8 +129,6 @@ const _allFeatures = <_Feat>[
   _Feat('messages',     'Mensagens',                    'Mensagens privadas entre utilizadores',                           _Cat.comms, Icons.chat_bubble_outline),
   // Financeiro
   _Feat('finance',      'Módulo Financeiro',            'Facturas, contratos, despesas, caixa e exportação SAF-T',        _Cat.finance, Icons.account_balance_wallet_outlined),
-  // Gestão de pessoal
-  _Feat('absences',            'Faltas de Funcionários', 'Registo de faltas e ausências de funcionários',                  _Cat.operational, Icons.event_busy_outlined),
   // Funções disponíveis
   _Feat('role_teacher',        'Professor / Educador',  'Função de docente: caderneta, presenças, notas e saúde',         _Cat.roles, Icons.school_outlined),
   _Feat('role_coordinator',    'Coordenador Pedagógico','Acesso à gestão académica e relatórios pedagógicos',             _Cat.roles, Icons.manage_accounts_outlined),

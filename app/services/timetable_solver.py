@@ -230,20 +230,9 @@ def _ortools_solve(
     cp_status = solver.Solve(model)
 
     if cp_status not in (cp.OPTIMAL, cp.FEASIBLE):
-        return SolverResult(
-            status='infeasible',
-            conflicts=[
-                SolverConflict(
-                    requirement_id=req.id,
-                    subject_name=req.subject_name,
-                    employee_name=req.employee_name,
-                    periods_requested=req.periods_per_week,
-                    periods_assigned=0,
-                    reason='Impossível satisfazer todos os requisitos simultaneamente',
-                )
-                for req in requirements
-            ],
-        )
+        # OR-Tools couldn't find any feasible solution (timeout or truly infeasible).
+        # Fall back to greedy — always produces a best-effort partial solution.
+        return _greedy_solve(requirements, periods, blocked)
 
     cells: list[SolverCell] = []
     conflicts: list[SolverConflict] = []
