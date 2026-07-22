@@ -53,74 +53,124 @@ class School(Base):
 # Feature defaults per school segment
 _SEGMENT_DEFAULTS: dict[str, dict] = {
     "preschool": {
-        "caderneta": True,
+        # ── Pedagógico ─────────────────────────────────────
+        "checkin": True,          # guardian check-in / check-out system
+        "caderneta": True,        # daily notebook by educator
         "evaluations": True,      # developmental milestone tracking
         "activities": True,       # activity-based schedule management
-        "meal_orders": True,
-        "immunizations": True,
-        "health": True,
+        "timetable_k12": False,   # uses simple activity schedule, not subject grid
         "grades": False,
         "subjects": False,
+        # ── Saúde ──────────────────────────────────────────
+        "health": True,
+        "immunizations": True,
         "med_report": False,
+        # ── Operacional ────────────────────────────────────
+        "meal_orders": True,
         "trip_auth": True,
         "pickup_auth": True,
-        "timetable_k12": False,   # uses simple activity schedule
+        # ── Funções disponíveis ────────────────────────────
+        "role_coordinator": True,
+        "role_finance_officer": True,
+        "role_secretary": True,
+        "role_nurse": True,
+        "role_student": False,    # no student portal for preschool
     },
     "primary": {
-        "caderneta": False,
-        "evaluations": False,
-        "activities": False,      # K-12 uses subjects, not activities
-        "meal_orders": True,
-        "immunizations": True,
-        "health": True,
-        "grades": True,
-        "subjects": True,
-        "med_report": True,
-        "trip_auth": True,
-        "pickup_auth": False,
-        "timetable_k12": True,    # uses subject×teacher×period grid
-    },
-    "secondary": {
+        # ── Pedagógico ─────────────────────────────────────
+        "checkin": False,         # K-12 uses per-lesson livro de ponto
         "caderneta": False,
         "evaluations": False,
         "activities": False,
-        "meal_orders": False,
-        "immunizations": False,
-        "health": True,
+        "timetable_k12": True,    # subject×teacher×period grid
         "grades": True,
         "subjects": True,
+        # ── Saúde ──────────────────────────────────────────
+        "health": True,
+        "immunizations": True,
         "med_report": True,
-        "trip_auth": False,
-        "pickup_auth": False,
-        "timetable_k12": True,
+        # ── Operacional ────────────────────────────────────
+        "meal_orders": True,
+        "trip_auth": True,
+        "pickup_auth": True,      # primary pupils still need pickup auth
+        # ── Funções disponíveis ────────────────────────────
+        "role_coordinator": True,
+        "role_finance_officer": True,
+        "role_secretary": True,
+        "role_nurse": True,
+        "role_student": False,
     },
-    "combined": {
+    "secondary": {
+        # ── Pedagógico ─────────────────────────────────────
+        "checkin": False,
         "caderneta": False,
         "evaluations": False,
-        "activities": True,       # has preschool component
-        "meal_orders": True,
-        "immunizations": True,
-        "health": True,
-        "grades": True,
-        "subjects": True,
-        "med_report": True,
-        "trip_auth": True,
-        "pickup_auth": False,
+        "activities": False,
         "timetable_k12": True,
-    },
-    "full": {
-        "caderneta": True,
-        "evaluations": False,     # developmental milestones are preschool-only
-        "activities": True,
-        "meal_orders": True,
-        "immunizations": True,
-        "health": True,
         "grades": True,
         "subjects": True,
+        # ── Saúde ──────────────────────────────────────────
+        "health": True,
+        "immunizations": False,
         "med_report": True,
+        # ── Operacional ────────────────────────────────────
+        "meal_orders": False,
+        "trip_auth": False,
+        "pickup_auth": False,     # secondary students travel independently
+        # ── Funções disponíveis ────────────────────────────
+        "role_coordinator": True,
+        "role_finance_officer": True,
+        "role_secretary": True,
+        "role_nurse": False,
+        "role_student": True,     # student self-service portal
+    },
+    "combined": {
+        # ── Pedagógico ─────────────────────────────────────
+        "checkin": False,
+        "caderneta": False,
+        "evaluations": False,
+        "activities": False,
+        "timetable_k12": True,
+        "grades": True,
+        "subjects": True,
+        # ── Saúde ──────────────────────────────────────────
+        "health": True,
+        "immunizations": True,
+        "med_report": True,
+        # ── Operacional ────────────────────────────────────
+        "meal_orders": True,
         "trip_auth": True,
         "pickup_auth": True,
+        # ── Funções disponíveis ────────────────────────────
+        "role_coordinator": True,
+        "role_finance_officer": True,
+        "role_secretary": True,
+        "role_nurse": True,
+        "role_student": True,
+    },
+    "full": {
+        # ── Pedagógico ─────────────────────────────────────
+        "checkin": True,          # has preschool component
+        "caderneta": True,
+        "evaluations": True,
+        "activities": True,
         "timetable_k12": True,
+        "grades": True,
+        "subjects": True,
+        # ── Saúde ──────────────────────────────────────────
+        "health": True,
+        "immunizations": True,
+        "med_report": True,
+        # ── Operacional ────────────────────────────────────
+        "meal_orders": True,
+        "trip_auth": True,
+        "pickup_auth": True,
+        # ── Funções disponíveis ────────────────────────────
+        "role_coordinator": True,
+        "role_finance_officer": True,
+        "role_secretary": True,
+        "role_nurse": True,
+        "role_student": True,
     },
 }
 

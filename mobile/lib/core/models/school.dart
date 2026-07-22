@@ -36,6 +36,10 @@ class School {
     return resolvedFeatures[key] as bool? ?? true;
   }
 
+  /// Returns true if the given role can be assigned at this school.
+  /// Maps UserRole string names to the `role_*` feature flags.
+  bool isRoleAvailable(String roleKey) => hasFeature('role_$roleKey');
+
   factory School.fromJson(Map<String, dynamic> json) {
     final rf = json['resolved_features'];
     return School(

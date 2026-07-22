@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_exception.dart';
@@ -259,6 +260,14 @@ class _SchoolsScreenState extends ConsumerState<SchoolsScreen> {
                                     icon: const Icon(Icons.edit_outlined),
                                     tooltip: 'Editar',
                                     onPressed: () => _showEditDialog(s),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.tune_outlined),
+                                    tooltip: 'Configurar funcionalidades',
+                                    onPressed: () => context.push(
+                                      '/platform/schools/${s['id']}/config',
+                                      extra: s['name'] as String? ?? '',
+                                    ),
                                   ),
                                   Switch(
                                     value: isActive,

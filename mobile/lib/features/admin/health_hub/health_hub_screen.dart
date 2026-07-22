@@ -1,27 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/providers/currency_provider.dart';
 import '../../../core/theme/app_theme.dart';
 
-class HealthHubScreen extends StatelessWidget {
+class HealthHubScreen extends ConsumerWidget {
   const HealthHubScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    const items = [
+  Widget build(BuildContext context, WidgetRef ref) {
+    final school = ref.watch(schoolInfoProvider).valueOrNull;
+
+    bool feat(String f) => school?.hasFeature(f) ?? true;
+
+    final items = [
+      // Always visible
       (
         icon: Icons.health_and_safety_outlined,
         color: Colors.red,
         label: 'Saúde',
         description: 'Registos de saúde, febres, medicamentos e bem-estar',
         path: '/health',
-      ),
-      (
-        icon: Icons.vaccines_outlined,
-        color: Colors.teal,
-        label: 'Vacinas',
-        description: 'Calendário vacinal e registos de imunização',
-        path: '/health/immunizations',
+        show: true,
       ),
       (
         icon: Icons.report_outlined,
@@ -29,15 +30,27 @@ class HealthHubScreen extends StatelessWidget {
         label: 'Ocorrências',
         description: 'Incidentes, acidentes e comportamentos notáveis',
         path: '/incidents',
+        show: true,
       ),
+      // Preschool / Primary only
+      (
+        icon: Icons.vaccines_outlined,
+        color: Colors.teal,
+        label: 'Vacinas',
+        description: 'Calendário vacinal e registos de imunização',
+        path: '/health/immunizations',
+        show: feat('immunizations'),
+      ),
+      // Preschool only — developmental milestone evaluations
       (
         icon: Icons.school_outlined,
         color: Colors.purple,
         label: 'Avaliações',
-        description: 'Avaliações pedagógicas e boletins de desenvolvimento',
+        description: 'Avaliações pedagógicas de desenvolvimento',
         path: '/evaluations',
+        show: feat('evaluations'),
       ),
-    ];
+    ].where((item) => item.show).toList();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Saúde & Bem-estar')),
@@ -106,10 +119,12 @@ class _HubCard extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(label,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 16)),
               const SizedBox(height: 4),
               Text(description,
-                  style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                  style: const TextStyle(
+                      color: AppTheme.textSecondary, fontSize: 12),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis),
             ],

@@ -30,6 +30,7 @@ import '../../features/parent/school_hub/parent_school_hub.dart';
 import '../../features/parent/authorizations_hub/parent_auth_hub.dart';
 import '../../features/platform/dashboard/platform_dashboard_screen.dart';
 import '../../features/platform/schools/schools_screen.dart';
+import '../../features/platform/schools/school_config_screen.dart';
 import '../../features/platform/website/website_dashboard_screen.dart';
 import '../../features/platform/website/website_page_editor_screen.dart';
 import '../../features/platform/website/website_section_editor_screen.dart';
@@ -353,19 +354,25 @@ const _roleItemOrder = [
 
 /// Feature flag required per sidebar path. Paths not listed are always shown.
 const _pathFeatureMap = {
-  '/admin/activities':      'activities',
-  '/admin/food-hub':        'meal_orders',
-  '/teacher/caderneta':     'caderneta',
-  '/teacher/grades':        'grades',
-  '/timetable':             'timetable_k12',
-  '/lesson-attendance':     'timetable_k12',
-  '/evaluations':           'evaluations',
-  '/parent/caderneta':      'caderneta',
-  '/health/immunizations':  'immunizations',
-  '/meal-orders':           'meal_orders',
-  '/pickup-authorizations': 'pickup_auth',
-  '/trip-authorizations':   'trip_auth',
-  '/admin/reports/med':     'med_report',
+  // Admin
+  '/admin/activities':         'activities',
+  '/admin/food-hub':           'meal_orders',
+  '/admin/reports/med':        'med_report',
+  // Teacher
+  '/teacher/attendance':       'checkin',       // daily guardian check-in/out — preschool only
+  '/teacher/caderneta':        'caderneta',
+  '/teacher/grades':           'grades',
+  '/lesson-attendance':        'timetable_k12', // per-lesson livro de ponto — K-12 only
+  '/timetable':                'timetable_k12',
+  '/evaluations':              'evaluations',
+  '/health/immunizations':     'immunizations',
+  '/meal-orders':              'meal_orders',
+  '/pickup-authorizations':    'pickup_auth',
+  '/trip-authorizations':      'trip_auth',
+  // Parent
+  '/parent/caderneta':         'caderneta',
+  '/parent/food':              'meal_orders',
+  '/parent/authorizations':    'trip_auth',
 };
 
 List<SidebarItem> _buildSidebarItems(Set<UserRole> roles, [School? school]) {
@@ -557,6 +564,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           // ── Platform admin ───────────────────────────────────────────────
           GoRoute(path: '/platform',         builder: (_, __) => const PlatformDashboardScreen()),
           GoRoute(path: '/platform/schools', builder: (_, __) => const SchoolsScreen()),
+          GoRoute(
+            path: '/platform/schools/:id/config',
+            builder: (_, state) => SchoolConfigScreen(
+              schoolId: state.pathParameters['id'] ?? '',
+              schoolName: state.extra as String? ?? 'Escola',
+            ),
+          ),
 
           // ── Platform: Website CMS ────────────────────────────────────────────
           GoRoute(path: '/platform/website', builder: (_, __) => const WebsiteDashboardScreen()),

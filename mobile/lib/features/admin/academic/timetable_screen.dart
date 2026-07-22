@@ -18,6 +18,14 @@ import '../../../core/auth/auth_provider.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/theme/app_theme.dart';
 
+// Pad "H:MM" → "HH:MM:SS" so Pydantic's time parser accepts it.
+String _padTime(String hhmm) {
+  final parts = hhmm.trim().split(':');
+  final h = (parts.isNotEmpty ? parts[0] : '00').padLeft(2, '0');
+  final m = (parts.length > 1 ? parts[1] : '00').padLeft(2, '0');
+  return '$h:$m:00';
+}
+
 // ---------------------------------------------------------------------------
 // Models
 // ---------------------------------------------------------------------------
@@ -1852,8 +1860,8 @@ class _PeriodsDialogState extends ConsumerState<_PeriodsDialog> {
                     if (existing == null)
                       'period_number': int.parse(numCtrl.text),
                     'name': nameCtrl.text,
-                    'start_time': '${startCtrl.text}:00',
-                    'end_time': '${endCtrl.text}:00',
+                    'start_time': _padTime(startCtrl.text),
+                    'end_time': _padTime(endCtrl.text),
                     'is_break': isBreak,
                   };
                   if (existing == null) {
