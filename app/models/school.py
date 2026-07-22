@@ -43,62 +43,104 @@ class School(Base):
 
     @property
     def resolved_features(self) -> dict:
-        """Merge segment defaults with per-school overrides."""
+        """Merge segment defaults with per-school overrides (deep-merge dicts)."""
         defaults = _SEGMENT_DEFAULTS.get(self.segment, _SEGMENT_DEFAULTS["preschool"]).copy()
         if self.features:
-            defaults.update(self.features)
+            for key, value in self.features.items():
+                if isinstance(value, dict) and isinstance(defaults.get(key), dict):
+                    merged = {**defaults[key], **value}
+                    defaults[key] = merged
+                else:
+                    defaults[key] = value
         return defaults
 
 
-# Feature defaults per school segment
+# ---------------------------------------------------------------------------
+# Feature defaults per school segment.
+# These are the starting point. Platform admin can override any key per school
+# via school.features (JSONB). resolved_features = merge(defaults, overrides).
+#
+# role_permissions: dict[role_key, dict[feature_key, bool]]
+#   Controls which features each role can ACCESS at this school.
+#   Default (missing key) = True (access granted).
+#   Platform admin sets explicit False to restrict a role from a feature.
+# ---------------------------------------------------------------------------
 _SEGMENT_DEFAULTS: dict[str, dict] = {
     "preschool": {
         # ── Pedagógico ─────────────────────────────────────
-        "checkin": True,          # guardian check-in / check-out system
-        "caderneta": True,        # daily notebook by educator
-        "evaluations": True,      # developmental milestone tracking
-        "activities": True,       # activity-based schedule management
-        "timetable_k12": False,   # uses simple activity schedule, not subject grid
+        "checkin": True,
+        "caderneta": True,
+        "evaluations": True,
+        "activities": True,
+        "timetable_k12": False,
+        "lesson_attendance": False,
         "grades": False,
         "subjects": False,
-        # ── Saúde ──────────────────────────────────────────
+        "report_cards": False,
+        "appointments": True,
+        # ── Saúde & Incidentes ─────────────────────────────
         "health": True,
         "immunizations": True,
         "med_report": False,
+        "incidents": True,
         # ── Operacional ────────────────────────────────────
         "meal_orders": True,
         "trip_auth": True,
         "pickup_auth": True,
-        # ── Funções disponíveis ────────────────────────────
-        "role_coordinator": True,
-        "role_finance_officer": True,
-        "role_secretary": True,
-        "role_nurse": True,
-        "role_student": False,    # no student portal for preschool
-    },
-    "primary": {
-        # ── Pedagógico ─────────────────────────────────────
-        "checkin": False,         # K-12 uses per-lesson livro de ponto
-        "caderneta": False,
-        "evaluations": False,
-        "activities": False,
-        "timetable_k12": True,    # subject×teacher×period grid
-        "grades": True,
-        "subjects": True,
-        # ── Saúde ──────────────────────────────────────────
-        "health": True,
-        "immunizations": True,
-        "med_report": True,
-        # ── Operacional ────────────────────────────────────
-        "meal_orders": True,
-        "trip_auth": True,
-        "pickup_auth": True,      # primary pupils still need pickup auth
+        "photos": True,
+        "events": True,
+        "documents": True,
+        # ── Comunicação ────────────────────────────────────
+        "announcements": True,
+        "messages": True,
+        # ── Financeiro ─────────────────────────────────────
+        "finance": True,
         # ── Funções disponíveis ────────────────────────────
         "role_coordinator": True,
         "role_finance_officer": True,
         "role_secretary": True,
         "role_nurse": True,
         "role_student": False,
+        # ── Permissões por função (overrides only) ─────────
+        # role_permissions: {} means "all roles get default access"
+        "role_permissions": {},
+    },
+    "primary": {
+        # ── Pedagógico ─────────────────────────────────────
+        "checkin": False,
+        "caderneta": False,
+        "evaluations": False,
+        "activities": False,
+        "timetable_k12": True,
+        "lesson_attendance": True,
+        "grades": True,
+        "subjects": True,
+        "report_cards": True,
+        "appointments": True,
+        # ── Saúde & Incidentes ─────────────────────────────
+        "health": True,
+        "immunizations": True,
+        "med_report": True,
+        "incidents": True,
+        # ── Operacional ────────────────────────────────────
+        "meal_orders": True,
+        "trip_auth": True,
+        "pickup_auth": True,
+        "photos": True,
+        "events": True,
+        "documents": True,
+        # ── Comunicação ────────────────────────────────────
+        "announcements": True,
+        "messages": True,
+        # ── Financeiro ─────────────────────────────────────
+        "finance": True,
+        # ── Funções disponíveis ────────────────────────────
+        "role_coordinator": True,
+        "role_finance_officer": True,
+        "role_secretary": True,
+        "role_nurse": True,
+        "role_student": False,
+        "role_permissions": {},
     },
     "secondary": {
         # ── Pedagógico ─────────────────────────────────────
@@ -107,22 +149,35 @@ _SEGMENT_DEFAULTS: dict[str, dict] = {
         "evaluations": False,
         "activities": False,
         "timetable_k12": True,
+        "lesson_attendance": True,
         "grades": True,
         "subjects": True,
-        # ── Saúde ──────────────────────────────────────────
+        "report_cards": True,
+        "appointments": False,
+        # ── Saúde & Incidentes ─────────────────────────────
         "health": True,
         "immunizations": False,
         "med_report": True,
+        "incidents": True,
         # ── Operacional ────────────────────────────────────
         "meal_orders": False,
         "trip_auth": False,
-        "pickup_auth": False,     # secondary students travel independently
+        "pickup_auth": False,
+        "photos": False,
+        "events": True,
+        "documents": True,
+        # ── Comunicação ────────────────────────────────────
+        "announcements": True,
+        "messages": True,
+        # ── Financeiro ─────────────────────────────────────
+        "finance": True,
         # ── Funções disponíveis ────────────────────────────
         "role_coordinator": True,
         "role_finance_officer": True,
         "role_secretary": True,
         "role_nurse": False,
-        "role_student": True,     # student self-service portal
+        "role_student": True,
+        "role_permissions": {},
     },
     "combined": {
         # ── Pedagógico ─────────────────────────────────────
@@ -131,46 +186,72 @@ _SEGMENT_DEFAULTS: dict[str, dict] = {
         "evaluations": False,
         "activities": False,
         "timetable_k12": True,
+        "lesson_attendance": True,
         "grades": True,
         "subjects": True,
-        # ── Saúde ──────────────────────────────────────────
+        "report_cards": True,
+        "appointments": True,
+        # ── Saúde & Incidentes ─────────────────────────────
         "health": True,
         "immunizations": True,
         "med_report": True,
+        "incidents": True,
         # ── Operacional ────────────────────────────────────
         "meal_orders": True,
         "trip_auth": True,
         "pickup_auth": True,
+        "photos": True,
+        "events": True,
+        "documents": True,
+        # ── Comunicação ────────────────────────────────────
+        "announcements": True,
+        "messages": True,
+        # ── Financeiro ─────────────────────────────────────
+        "finance": True,
         # ── Funções disponíveis ────────────────────────────
         "role_coordinator": True,
         "role_finance_officer": True,
         "role_secretary": True,
         "role_nurse": True,
         "role_student": True,
+        "role_permissions": {},
     },
     "full": {
         # ── Pedagógico ─────────────────────────────────────
-        "checkin": True,          # has preschool component
+        "checkin": True,
         "caderneta": True,
         "evaluations": True,
         "activities": True,
         "timetable_k12": True,
+        "lesson_attendance": True,
         "grades": True,
         "subjects": True,
-        # ── Saúde ──────────────────────────────────────────
+        "report_cards": True,
+        "appointments": True,
+        # ── Saúde & Incidentes ─────────────────────────────
         "health": True,
         "immunizations": True,
         "med_report": True,
+        "incidents": True,
         # ── Operacional ────────────────────────────────────
         "meal_orders": True,
         "trip_auth": True,
         "pickup_auth": True,
+        "photos": True,
+        "events": True,
+        "documents": True,
+        # ── Comunicação ────────────────────────────────────
+        "announcements": True,
+        "messages": True,
+        # ── Financeiro ─────────────────────────────────────
+        "finance": True,
         # ── Funções disponíveis ────────────────────────────
         "role_coordinator": True,
         "role_finance_officer": True,
         "role_secretary": True,
         "role_nurse": True,
         "role_student": True,
+        "role_permissions": {},
     },
 }
 

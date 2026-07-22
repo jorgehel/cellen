@@ -37,8 +37,18 @@ class School {
   }
 
   /// Returns true if the given role can be assigned at this school.
-  /// Maps UserRole string names to the `role_*` feature flags.
   bool isRoleAvailable(String roleKey) => hasFeature('role_$roleKey');
+
+  /// Returns true if [roleKey] can access [featureKey] at this school.
+  /// role_permissions in resolved_features is a Map<role, Map<feature, bool>>.
+  /// Missing entry = true (default access granted).
+  bool roleCanAccess(String roleKey, String featureKey) {
+    final perms = resolvedFeatures['role_permissions'];
+    if (perms is! Map) return true;
+    final rolePerms = perms[roleKey];
+    if (rolePerms is! Map) return true;
+    return rolePerms[featureKey] as bool? ?? true;
+  }
 
   factory School.fromJson(Map<String, dynamic> json) {
     final rf = json['resolved_features'];

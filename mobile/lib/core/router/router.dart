@@ -352,27 +352,59 @@ const _roleItemOrder = [
   (UserRole.student,        _studentItems),
 ];
 
+// Maps UserRole → key used in school.role_permissions dict
+const _rolePermKey = {
+  UserRole.teacher:        'teacher',
+  UserRole.coordinator:    'coordinator',
+  UserRole.financeOfficer: 'finance_officer',
+  UserRole.secretary:      'secretary',
+  UserRole.nurse:          'nurse',
+  UserRole.parent:         'parent',
+  UserRole.student:        'student',
+  // schoolAdmin and platformAdmin always have full access — no role_permissions check
+};
+
 /// Feature flag required per sidebar path. Paths not listed are always shown.
+// Maps sidebar path → feature key that must be enabled at school level.
+// Every path listed here is hidden if school.hasFeature(key) == false.
+// Paths NOT in this map are always visible (core navigation).
 const _pathFeatureMap = {
-  // Admin
+  // ── Admin ───────────────────────────────────────────────────────────
+  '/admin/finance':            'finance',
+  '/admin/health-hub':         'health',
+  '/admin/comms':              'announcements',
   '/admin/activities':         'activities',
   '/admin/food-hub':           'meal_orders',
   '/admin/reports/med':        'med_report',
-  // Teacher
-  '/teacher/attendance':       'checkin',       // daily guardian check-in/out — preschool only
-  '/teacher/caderneta':        'caderneta',
-  '/teacher/grades':           'grades',
-  '/lesson-attendance':        'timetable_k12', // per-lesson livro de ponto — K-12 only
-  '/timetable':                'timetable_k12',
-  '/evaluations':              'evaluations',
+  // ── Shared feature screens ──────────────────────────────────────────
+  '/health':                   'health',
   '/health/immunizations':     'immunizations',
+  '/incidents':                'incidents',
+  '/evaluations':              'evaluations',
+  '/announcements':            'announcements',
+  '/messages':                 'messages',
+  '/photos':                   'photos',
+  '/events':                   'events',
+  '/documents':                'documents',
+  '/appointments':             'appointments',
   '/meal-orders':              'meal_orders',
   '/pickup-authorizations':    'pickup_auth',
   '/trip-authorizations':      'trip_auth',
-  // Parent
+  // ── Teacher-specific ────────────────────────────────────────────────
+  '/teacher/attendance':       'checkin',
+  '/teacher/caderneta':        'caderneta',
+  '/teacher/grades':           'grades',
+  '/lesson-attendance':        'lesson_attendance',
+  '/timetable':                'timetable_k12',
+  '/admin/absences':           'checkin',
+  // ── Parent-specific ─────────────────────────────────────────────────
   '/parent/caderneta':         'caderneta',
+  '/parent/invoices':          'finance',
   '/parent/food':              'meal_orders',
+  '/parent/menu':              'meal_orders',
   '/parent/authorizations':    'trip_auth',
+  '/parent/grades':            'report_cards',
+  '/parent/attendance':        'checkin',
 };
 
 List<SidebarItem> _buildSidebarItems(Set<UserRole> roles, [School? school]) {
@@ -380,9 +412,14 @@ List<SidebarItem> _buildSidebarItems(Set<UserRole> roles, [School? school]) {
   final result = <SidebarItem>[];
   for (final (role, items) in _roleItemOrder) {
     if (roles.contains(role)) {
+      final permKey = _rolePermKey[role]; // null for admin/platform — no restrictions
       for (final item in items) {
         final feature = _pathFeatureMap[item.path];
+        // 1. School must have this feature enabled
         if (feature != null && !(school?.hasFeature(feature) ?? true)) continue;
+        // 2. This role must be allowed to access this feature at this school
+        if (feature != null && permKey != null &&
+            !(school?.roleCanAccess(permKey, feature) ?? true)) continue;
         if (seen.add(item.path)) result.add(item);
       }
     }
