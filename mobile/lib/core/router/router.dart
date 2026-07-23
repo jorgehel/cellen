@@ -88,6 +88,7 @@ import '../../features/admin/academic/subjects_screen.dart';
 import '../../features/admin/academic/turma_subjects_screen.dart';
 import '../../features/admin/academic/report_cards_screen.dart';
 import '../../features/admin/academic/timetable_screen.dart';
+import '../../features/admin/academic/grade_schemes_screen.dart';
 import '../../features/teacher/grades/grades_screen.dart';
 import '../../features/parent/grades/parent_grades_screen.dart';
 import '../../core/api/api_client.dart';
@@ -686,6 +687,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/admin/academic/turma-subjects', builder: (_, __) => const TurmaSubjectsScreen()),
           GoRoute(path: '/admin/academic/report-cards',   builder: (_, __) => const ReportCardsScreen()),
           GoRoute(path: '/admin/academic/timetable',      builder: (_, __) => const TimetableScreen()),
+          GoRoute(path: '/admin/academic/grade-schemes',  builder: (_, __) => const GradeSchemesScreen()),
 
           // ── Teacher / Staff ──────────────────────────────────────────────
           GoRoute(path: '/teacher',                    builder: (_, __) => const TeacherDashboardScreen()),

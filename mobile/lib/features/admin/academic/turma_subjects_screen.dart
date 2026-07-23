@@ -54,6 +54,16 @@ class _Teacher {
       );
 }
 
+class _SchemeOption {
+  final String id;
+  final String name;
+  const _SchemeOption({required this.id, required this.name});
+  factory _SchemeOption.fromJson(Map<String, dynamic> j) => _SchemeOption(
+        id: j['id'] as String,
+        name: j['name'] as String,
+      );
+}
+
 class _TurmaSubject {
   final String id;
   final String subjectId;
@@ -61,6 +71,8 @@ class _TurmaSubject {
   final String? subjectCode;
   final String? teacherId;
   final String? teacherName;
+  final String? gradeSchemeId;
+  final String? gradeScheme; // display name
   final bool isLocked;
   const _TurmaSubject({
     required this.id,
@@ -69,6 +81,8 @@ class _TurmaSubject {
     this.subjectCode,
     this.teacherId,
     this.teacherName,
+    this.gradeSchemeId,
+    this.gradeScheme,
     required this.isLocked,
   });
   factory _TurmaSubject.fromJson(Map<String, dynamic> j) => _TurmaSubject(
@@ -78,6 +92,10 @@ class _TurmaSubject {
         subjectCode: j['subject_code'] as String?,
         teacherId: j['teacher_id'] as String?,
         teacherName: j['teacher_name'] as String?,
+        gradeSchemeId: j['grade_scheme_id'] as String?,
+        gradeScheme: j['grade_scheme'] != null
+            ? (j['grade_scheme'] as Map)['name'] as String?
+            : null,
         isLocked: j['is_locked'] as bool? ?? false,
       );
 }
@@ -104,6 +122,11 @@ final _tsSubjectsProvider = FutureProvider.autoDispose<List<_Subject>>((ref) asy
 final _tsTeachersProvider = FutureProvider.autoDispose<List<_Teacher>>((ref) async {
   final data = await ref.read(apiClientProvider).get('/employees?employee_type=teacher&limit=200') as List;
   return data.map((e) => _Teacher.fromJson(e as Map<String, dynamic>)).toList();
+});
+
+final _tsSchemesProvider = FutureProvider.autoDispose<List<_SchemeOption>>((ref) async {
+  final data = await ref.read(apiClientProvider).get('/grades/schemes') as List;
+  return data.map((e) => _SchemeOption.fromJson(e as Map<String, dynamic>)).toList();
 });
 
 // ---------------------------------------------------------------------------
@@ -346,12 +369,26 @@ class _TurmaSubjectsScreenState extends ConsumerState<TurmaSubjectsScreen> {
                                 ),
                               ),
                               title: Text(a.subjectName, style: const TextStyle(fontWeight: FontWeight.w600)),
-                              subtitle: Text(
-                                a.teacherName != null ? 'Professor: ${a.teacherName}' : 'Sem professor atribuído',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: a.teacherName != null ? null : Colors.orange,
-                                ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    a.teacherName != null
+                                        ? 'Professor: ${a.teacherName}'
+                                        : 'Sem professor atribuído',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: a.teacherName != null ? null : Colors.orange,
+                                    ),
+                                  ),
+                                  Text(
+                                    a.gradeScheme != null
+                                        ? 'Método: ${a.gradeScheme}'
+                                        : 'Método: padrão da escola',
+                                    style: const TextStyle(
+                                        fontSize: 11, color: AppTheme.textSecondary),
+                                  ),
+                                ],
                               ),
                               trailing: Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -438,6 +475,7 @@ class _AssignDialog extends ConsumerStatefulWidget {
 class _AssignDialogState extends ConsumerState<_AssignDialog> {
   String? _subjectId;
   String? _teacherId;
+  String? _gradeSchemeId;
   bool _saving = false;
   String? _error;
 
@@ -453,6 +491,7 @@ class _AssignDialogState extends ConsumerState<_AssignDialog> {
         'subject_id': _subjectId,
         'school_year_id': widget.schoolYearId,
         if (_teacherId != null) 'teacher_id': _teacherId,
+        if (_gradeSchemeId != null) 'grade_scheme_id': _gradeSchemeId,
       });
       widget.onSaved();
       if (mounted) Navigator.pop(context);
@@ -465,6 +504,7 @@ class _AssignDialogState extends ConsumerState<_AssignDialog> {
   Widget build(BuildContext context) {
     final subjectsAsync = ref.watch(_tsSubjectsProvider);
     final teachersAsync = ref.watch(_tsTeachersProvider);
+    final schemesAsync = ref.watch(_tsSchemesProvider);
 
     return AlertDialog(
       title: const Text('Atribuir Disciplina'),
@@ -502,6 +542,24 @@ class _AssignDialogState extends ConsumerState<_AssignDialog> {
                 onChanged: (v) => setState(() => _teacherId = v),
               ),
             ),
+            const SizedBox(height: 12),
+            schemesAsync.when(
+              loading: () => const LinearProgressIndicator(),
+              error: (e, _) => const SizedBox.shrink(),
+              data: (schemes) => DropdownButtonFormField<String>(
+                value: _gradeSchemeId,
+                decoration: const InputDecoration(
+                  labelText: 'Método de avaliação',
+                  isDense: true,
+                  helperText: 'Deixe em branco para usar o método padrão da escola',
+                ),
+                items: [
+                  const DropdownMenuItem<String>(value: null, child: Text('— Padrão da escola —')),
+                  ...schemes.map((s) => DropdownMenuItem(value: s.id, child: Text(s.name))),
+                ],
+                onChanged: (v) => setState(() => _gradeSchemeId = v),
+              ),
+            ),
             if (_error != null) ...[
               const SizedBox(height: 10),
               Text(_error!, style: const TextStyle(color: AppTheme.danger, fontSize: 13)),
@@ -537,6 +595,7 @@ class _EditAssignDialog extends ConsumerStatefulWidget {
 
 class _EditAssignDialogState extends ConsumerState<_EditAssignDialog> {
   late String? _teacherId;
+  late String? _gradeSchemeId;
   late bool _isLocked;
   bool _saving = false;
   String? _error;
@@ -545,6 +604,7 @@ class _EditAssignDialogState extends ConsumerState<_EditAssignDialog> {
   void initState() {
     super.initState();
     _teacherId = widget.assignment.teacherId;
+    _gradeSchemeId = widget.assignment.gradeSchemeId;
     _isLocked = widget.assignment.isLocked;
   }
 
@@ -553,7 +613,11 @@ class _EditAssignDialogState extends ConsumerState<_EditAssignDialog> {
     try {
       await ref.read(apiClientProvider).patch(
         '/grades/turma-subjects/${widget.assignment.id}',
-        data: {'teacher_id': _teacherId, 'is_locked': _isLocked},
+        data: {
+          'teacher_id': _teacherId,
+          'grade_scheme_id': _gradeSchemeId,
+          'is_locked': _isLocked,
+        },
       );
       widget.onSaved();
       if (mounted) Navigator.pop(context);
@@ -565,6 +629,7 @@ class _EditAssignDialogState extends ConsumerState<_EditAssignDialog> {
   @override
   Widget build(BuildContext context) {
     final teachersAsync = ref.watch(_tsTeachersProvider);
+    final schemesAsync = ref.watch(_tsSchemesProvider);
 
     return AlertDialog(
       title: Text('Editar: ${widget.assignment.subjectName}'),
@@ -586,6 +651,27 @@ class _EditAssignDialogState extends ConsumerState<_EditAssignDialog> {
                 onChanged: (v) => setState(() => _teacherId = v),
               ),
             ),
+            const SizedBox(height: 12),
+            schemesAsync.when(
+              loading: () => const LinearProgressIndicator(),
+              error: (e, _) => const SizedBox.shrink(),
+              data: (schemes) => DropdownButtonFormField<String>(
+                value: _gradeSchemeId,
+                decoration: const InputDecoration(
+                  labelText: 'Método de avaliação',
+                  isDense: true,
+                  helperText: 'Deixe em branco para usar o padrão da escola',
+                ),
+                items: [
+                  const DropdownMenuItem<String>(value: null, child: Text('— Padrão da escola —')),
+                  ...schemes.map((s) => DropdownMenuItem(value: s.id, child: Text(s.name))),
+                ],
+                onChanged: widget.assignment.isLocked
+                    ? null
+                    : (v) => setState(() => _gradeSchemeId = v),
+              ),
+            ),
+            const SizedBox(height: 4),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Bloquear lançamento de notas'),

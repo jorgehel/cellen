@@ -24,7 +24,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -140,6 +140,26 @@ async def update_grade_scheme(
     if body.name is not None:
         scheme.name = body.name
     if body.components is not None:
+        # Prevent component changes if marks already exist for turma_subjects using this scheme
+        marks_row = (await db.execute(
+            select(Mark.id)
+            .join(TurmaSubject, TurmaSubject.subject_id == Mark.subject_id)
+            .join(Schedule, Schedule.turma_id == TurmaSubject.turma_id)
+            .join(
+                Enrollment,
+                (Enrollment.schedule_id == Schedule.id) & (Enrollment.id == Mark.enrollment_id),
+            )
+            .where(TurmaSubject.grade_scheme_id == scheme_id)
+            .limit(1)
+        )).first()
+        if marks_row is not None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Não é possível alterar os componentes: existem notas lançadas com este método. "
+                    "Crie um novo método ou altere apenas o nome."
+                ),
+            )
         scheme.components = [c.model_dump() for c in body.components]
     if body.is_default is not None:
         if body.is_default:

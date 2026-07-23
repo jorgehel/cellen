@@ -93,6 +93,14 @@ class AcademicHubScreen extends ConsumerWidget {
         path: '/admin/academic/report-cards',
         feature: 'report_cards',
       ),
+      (
+        icon: Icons.tune_outlined,
+        color: Colors.brown,
+        label: 'Métodos de Avaliação',
+        description: 'Componentes e pesos de cada método (MAC, PE, etc.)',
+        path: '/admin/academic/grade-schemes',
+        feature: 'grades',
+      ),
     ];
 
     // ── Preschool specific ───────────────────────────────────────────────────
