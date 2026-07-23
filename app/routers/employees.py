@@ -63,7 +63,7 @@ async def create_employee(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Nome de utilizador já existe nesta escola")
 
-    employee_data = body.model_dump(exclude={"username", "password"})
+    employee_data = body.model_dump(exclude={"username", "password", "roles"})
     employee = Employee(school_id=school_id, **employee_data)
     db.add(employee)
     await db.flush()  # get employee.id before creating user
