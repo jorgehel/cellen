@@ -361,7 +361,7 @@ async def broadcast_message(
         select(User).where(
             User.school_id == school_id,
             User.is_active,
-            User.role.in_(role_filters),
+            User.roles.overlap(role_filters),
         )
     )
     recipient_users = recipients_result.scalars().all()
