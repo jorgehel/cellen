@@ -55,12 +55,16 @@ def upgrade() -> None:
     )
 
     # ── Seed 3 predefined schemes for every existing school ──────────────────
+    # Use jsonb_build_* functions to avoid SQLAlchemy misinterpreting :0.6 as a bind param
     op.execute("""
         INSERT INTO grade_schemes (id, school_id, name, components, is_default, created_at)
         SELECT
             gen_random_uuid(), id,
-            'MAC + PE (Padrão Angola)',
-            '[{"key":"mac","label":"MAC","weight":0.6},{"key":"exam","label":"PE","weight":0.4}]'::jsonb,
+            'MAC + PE (Padrao Angola)',
+            jsonb_build_array(
+                jsonb_build_object('key', 'mac', 'label', 'MAC', 'weight', 0.6),
+                jsonb_build_object('key', 'exam', 'label', 'PE', 'weight', 0.4)
+            ),
             true, now()
         FROM schools
     """)
@@ -68,8 +72,10 @@ def upgrade() -> None:
         INSERT INTO grade_schemes (id, school_id, name, components, is_default, created_at)
         SELECT
             gen_random_uuid(), id,
-            'Avaliação Contínua (100%)',
-            '[{"key":"mac","label":"Avaliação Contínua","weight":1.0}]'::jsonb,
+            'Avaliacao Continua (100%)',
+            jsonb_build_array(
+                jsonb_build_object('key', 'mac', 'label', 'Avaliacao Continua', 'weight', 1.0)
+            ),
             false, now()
         FROM schools
     """)
@@ -77,8 +83,12 @@ def upgrade() -> None:
         INSERT INTO grade_schemes (id, school_id, name, components, is_default, created_at)
         SELECT
             gen_random_uuid(), id,
-            'Três Componentes',
-            '[{"key":"mac","label":"Testes","weight":0.4},{"key":"exam","label":"Trabalhos","weight":0.3},{"key":"c3","label":"Exame Final","weight":0.3}]'::jsonb,
+            'Tres Componentes',
+            jsonb_build_array(
+                jsonb_build_object('key', 'mac', 'label', 'Testes', 'weight', 0.4),
+                jsonb_build_object('key', 'exam', 'label', 'Trabalhos', 'weight', 0.3),
+                jsonb_build_object('key', 'c3', 'label', 'Exame Final', 'weight', 0.3)
+            ),
             false, now()
         FROM schools
     """)
