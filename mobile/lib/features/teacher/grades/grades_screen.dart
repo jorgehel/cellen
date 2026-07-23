@@ -22,6 +22,32 @@ class _Turma {
       );
 }
 
+class _SchemeComponent {
+  final String key;
+  final String label;
+  final double weight;
+  const _SchemeComponent({required this.key, required this.label, required this.weight});
+  factory _SchemeComponent.fromJson(Map<String, dynamic> j) => _SchemeComponent(
+        key: j['key'] as String,
+        label: j['label'] as String,
+        weight: (j['weight'] as num).toDouble(),
+      );
+}
+
+class _GradeScheme {
+  final String id;
+  final String name;
+  final List<_SchemeComponent> components;
+  const _GradeScheme({required this.id, required this.name, required this.components});
+  factory _GradeScheme.fromJson(Map<String, dynamic> j) => _GradeScheme(
+        id: j['id'] as String,
+        name: j['name'] as String,
+        components: (j['components'] as List)
+            .map((c) => _SchemeComponent.fromJson(c as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
 class _TurmaSubject {
   final String id;
   final String turmaId;
@@ -30,6 +56,7 @@ class _TurmaSubject {
   final String? subjectCode;
   final String schoolYearId;
   final bool isLocked;
+  final _GradeScheme? gradeScheme;
   const _TurmaSubject({
     required this.id,
     required this.turmaId,
@@ -38,6 +65,7 @@ class _TurmaSubject {
     this.subjectCode,
     required this.schoolYearId,
     required this.isLocked,
+    this.gradeScheme,
   });
   factory _TurmaSubject.fromJson(Map<String, dynamic> j) => _TurmaSubject(
         id: j['id'] as String,
@@ -47,14 +75,16 @@ class _TurmaSubject {
         subjectCode: j['subject_code'] as String?,
         schoolYearId: j['school_year_id'] as String,
         isLocked: j['is_locked'] as bool? ?? false,
+        gradeScheme: j['grade_scheme'] != null
+            ? _GradeScheme.fromJson(j['grade_scheme'] as Map<String, dynamic>)
+            : null,
       );
 }
 
 class _StudentMark {
   final String enrollmentId;
   final String childName;
-  double? macGrade;
-  double? examGrade;
+  Map<String, double?> gradeComponents;  // {key: value} for all scheme components
   double? finalGrade;
   String? notes;
   String? markId;
@@ -62,28 +92,54 @@ class _StudentMark {
   _StudentMark({
     required this.enrollmentId,
     required this.childName,
-    this.macGrade,
-    this.examGrade,
+    Map<String, double?>? gradeComponents,
     this.finalGrade,
     this.notes,
     this.markId,
-  });
+  }) : gradeComponents = gradeComponents ?? {};
 
-  factory _StudentMark.fromJson(Map<String, dynamic> j) => _StudentMark(
-        enrollmentId: j['enrollment_id'] as String,
-        childName: j['child_name'] as String,
-        macGrade: (j['mac_grade'] as num?)?.toDouble(),
-        examGrade: (j['exam_grade'] as num?)?.toDouble(),
-        finalGrade: (j['final_grade'] as num?)?.toDouble(),
-        notes: j['notes'] as String?,
-        markId: j['mark_id'] as String?,
-      );
+  static double? _parseNum(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString());
+  }
 
-  double? get computedFinal {
-    if (macGrade != null && examGrade != null) {
-      return double.parse((macGrade! * 0.6 + examGrade! * 0.4).toStringAsFixed(1));
+  factory _StudentMark.fromJson(Map<String, dynamic> j) {
+    // Reconstruct components from grade_components JSONB or fall back to mac/exam columns
+    final Map<String, double?> components = {};
+    if (j['grade_components'] != null) {
+      final raw = j['grade_components'] as Map<String, dynamic>;
+      for (final e in raw.entries) {
+        components[e.key] = _parseNum(e.value);
+      }
+    } else {
+      final mac = _parseNum(j['mac_grade']);
+      final exam = _parseNum(j['exam_grade']);
+      if (mac != null) components['mac'] = mac;
+      if (exam != null) components['exam'] = exam;
     }
-    return macGrade ?? examGrade;
+    return _StudentMark(
+      enrollmentId: j['enrollment_id'] as String,
+      childName: j['child_name'] as String,
+      gradeComponents: components,
+      finalGrade: _parseNum(j['final_grade']),
+      notes: j['notes'] as String?,
+      markId: j['mark_id'] as String?,
+    );
+  }
+
+  double? computedFinal(List<_SchemeComponent> components) {
+    double total = 0;
+    double totalWeight = 0;
+    for (final comp in components) {
+      final val = gradeComponents[comp.key];
+      if (val != null) {
+        total += val * comp.weight;
+        totalWeight += comp.weight;
+      }
+    }
+    if (totalWeight == 0) return null;
+    return double.parse((total / totalWeight).toStringAsFixed(1));
   }
 }
 
@@ -151,18 +207,21 @@ class _GradesScreenState extends ConsumerState<GradesScreen> {
   }
 
   Future<void> _save() async {
+    final scheme = _selectedSubject?.gradeScheme;
+    final components = scheme?.components ?? [];
     setState(() { _saving = true; _error = null; _successMsg = null; });
     try {
       final api = ref.read(apiClientProvider);
       final marks = _marks
-          .where((m) => m.macGrade != null || m.examGrade != null || m.finalGrade != null)
+          .where((m) => m.gradeComponents.values.any((v) => v != null))
           .map((m) => {
                 'enrollment_id': m.enrollmentId,
                 'subject_id': _selectedSubject!.subjectId,
                 'trimester': _selectedTrimester,
-                'mac_grade': m.macGrade,
-                'exam_grade': m.examGrade,
-                'final_grade': m.computedFinal,
+                'mac_grade': m.gradeComponents['mac'],
+                'exam_grade': m.gradeComponents['exam'],
+                'grade_components': m.gradeComponents,
+                'final_grade': m.computedFinal(components),
                 'notes': m.notes,
               })
           .toList();
@@ -387,6 +446,7 @@ class _GradesScreenState extends ConsumerState<GradesScreen> {
                   )
                 : _GradeTable(
                     marks: _marks,
+                    scheme: _selectedSubject?.gradeScheme,
                     isLocked: _selectedSubject?.isLocked ?? false,
                     onChanged: () => setState(() {}),
                   ),
@@ -398,23 +458,32 @@ class _GradesScreenState extends ConsumerState<GradesScreen> {
 }
 
 // ---------------------------------------------------------------------------
-// Grade entry table
+// Grade entry table — dynamic columns based on grade scheme
 // ---------------------------------------------------------------------------
 
-class _GradeTable extends StatefulWidget {
+class _GradeTable extends StatelessWidget {
   final List<_StudentMark> marks;
+  final _GradeScheme? scheme;
   final bool isLocked;
   final VoidCallback onChanged;
 
-  const _GradeTable({required this.marks, required this.isLocked, required this.onChanged});
+  const _GradeTable({
+    required this.marks,
+    required this.scheme,
+    required this.isLocked,
+    required this.onChanged,
+  });
 
-  @override
-  State<_GradeTable> createState() => _GradeTableState();
-}
+  // Angola default when no scheme assigned
+  static const _defaultComponents = [
+    _SchemeComponent(key: 'mac', label: 'MAC', weight: 0.6),
+    _SchemeComponent(key: 'exam', label: 'PE', weight: 0.4),
+  ];
 
-class _GradeTableState extends State<_GradeTable> {
   @override
   Widget build(BuildContext context) {
+    final components = scheme?.components ?? _defaultComponents;
+
     return SingleChildScrollView(
       scrollDirection: Axis.vertical,
       child: SingleChildScrollView(
@@ -424,29 +493,26 @@ class _GradeTableState extends State<_GradeTable> {
           headingRowHeight: 40,
           dataRowMinHeight: 52,
           dataRowMaxHeight: 52,
-          columns: const [
-            DataColumn(label: Text('Aluno', style: TextStyle(fontWeight: FontWeight.bold))),
-            DataColumn(
-              label: Tooltip(
-                message: 'Média de Avaliação Contínua (60%)',
-                child: Text('MAC', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-              numeric: true,
+          columns: [
+            const DataColumn(
+              label: Text('Aluno', style: TextStyle(fontWeight: FontWeight.bold)),
             ),
-            DataColumn(
-              label: Tooltip(
-                message: 'Prova Escrita (40%)',
-                child: Text('PE', style: TextStyle(fontWeight: FontWeight.bold)),
+            for (final comp in components)
+              DataColumn(
+                numeric: true,
+                label: Tooltip(
+                  message: '${comp.label} (${(comp.weight * 100).toStringAsFixed(0)}%)',
+                  child: Text(comp.label,
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                ),
               ),
+            const DataColumn(
               numeric: true,
-            ),
-            DataColumn(
               label: Text('Final', style: TextStyle(fontWeight: FontWeight.bold)),
-              numeric: true,
             ),
           ],
-          rows: widget.marks.map((m) {
-            final finalGrade = m.computedFinal;
+          rows: marks.map((m) {
+            final finalGrade = m.computedFinal(components);
             final Color finalColor = finalGrade == null
                 ? AppTheme.textSecondary
                 : finalGrade >= 10
@@ -464,34 +530,24 @@ class _GradeTableState extends State<_GradeTable> {
                   ),
                 ),
               ),
-              DataCell(
-                SizedBox(
-                  width: 70,
-                  child: widget.isLocked
-                      ? Text(m.macGrade?.toStringAsFixed(1) ?? '—', textAlign: TextAlign.right)
-                      : _GradeInput(
-                          value: m.macGrade,
-                          onChanged: (v) {
-                            m.macGrade = v;
-                            widget.onChanged();
-                          },
-                        ),
+              for (final comp in components)
+                DataCell(
+                  SizedBox(
+                    width: 70,
+                    child: isLocked
+                        ? Text(
+                            m.gradeComponents[comp.key]?.toStringAsFixed(1) ?? '—',
+                            textAlign: TextAlign.right,
+                          )
+                        : _GradeInput(
+                            value: m.gradeComponents[comp.key],
+                            onChanged: (v) {
+                              m.gradeComponents[comp.key] = v;
+                              onChanged();
+                            },
+                          ),
+                  ),
                 ),
-              ),
-              DataCell(
-                SizedBox(
-                  width: 70,
-                  child: widget.isLocked
-                      ? Text(m.examGrade?.toStringAsFixed(1) ?? '—', textAlign: TextAlign.right)
-                      : _GradeInput(
-                          value: m.examGrade,
-                          onChanged: (v) {
-                            m.examGrade = v;
-                            widget.onChanged();
-                          },
-                        ),
-                ),
-              ),
               DataCell(
                 SizedBox(
                   width: 60,

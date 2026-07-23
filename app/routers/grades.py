@@ -31,11 +31,14 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, get_school_id, require_school_admin
 from app.models.academic import Enrollment, Schedule, SchoolYear, Turma
 from app.models.employee import Employee
-from app.models.grades import Mark, Subject, TurmaSubject
+from app.models.grades import GradeScheme, Mark, Subject, TurmaSubject
 from app.models.person import Child
 from app.models.user import User
 from app.schemas.grades import (
     ClassMarkRow,
+    GradeSchemeCreate,
+    GradeSchemeResponse,
+    GradeSchemeUpdate,
     MarkBulkUpsert,
     MarkResponse,
     ReportCard,
@@ -54,7 +57,7 @@ router = APIRouter(prefix="/grades", tags=["Grades"])
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def _compute_final(mac: Optional[Decimal], exam: Optional[Decimal]) -> Optional[Decimal]:
-    """Angola formula: MAC×60% + PE×40%, rounded to 1 decimal."""
+    """Angola default formula: MAC×60% + PE×40%, rounded to 1 decimal."""
     if mac is not None and exam is not None:
         raw = mac * Decimal("0.6") + exam * Decimal("0.4")
         return raw.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
@@ -63,6 +66,121 @@ def _compute_final(mac: Optional[Decimal], exam: Optional[Decimal]) -> Optional[
     if exam is not None:
         return exam
     return None
+
+
+def _compute_final_from_scheme(
+    components_config: list[dict],
+    grade_values: dict[str, Optional[float]],
+) -> Optional[Decimal]:
+    """Weighted average using scheme component definitions."""
+    total_weight = Decimal("0")
+    total_value = Decimal("0")
+    for comp in components_config:
+        key = comp["key"]
+        weight = Decimal(str(comp["weight"]))
+        val = grade_values.get(key)
+        if val is not None:
+            total_value += Decimal(str(val)) * weight
+            total_weight += weight
+    if total_weight == 0:
+        return None
+    # If all components have values, total_weight == 1.0; if partial, scale proportionally
+    return (total_value / total_weight).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+
+
+# ─── Grade Schemes ────────────────────────────────────────────────────────────
+
+@router.get("/schemes", response_model=list[GradeSchemeResponse])
+async def list_grade_schemes(
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    result = await db.execute(
+        select(GradeScheme)
+        .where(GradeScheme.school_id == school_id)
+        .order_by(GradeScheme.is_default.desc(), GradeScheme.created_at)
+    )
+    return result.scalars().all()
+
+
+@router.post("/schemes", response_model=GradeSchemeResponse, status_code=status.HTTP_201_CREATED)
+async def create_grade_scheme(
+    body: GradeSchemeCreate,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_school_admin),
+):
+    scheme = GradeScheme(
+        school_id=school_id,
+        name=body.name,
+        components=[c.model_dump() for c in body.components],
+        is_default=False,
+    )
+    db.add(scheme)
+    await db.commit()
+    await db.refresh(scheme)
+    return scheme
+
+
+@router.patch("/schemes/{scheme_id}", response_model=GradeSchemeResponse)
+async def update_grade_scheme(
+    scheme_id: uuid.UUID,
+    body: GradeSchemeUpdate,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_school_admin),
+):
+    result = await db.execute(
+        select(GradeScheme).where(GradeScheme.id == scheme_id, GradeScheme.school_id == school_id)
+    )
+    scheme = result.scalar_one_or_none()
+    if scheme is None:
+        raise HTTPException(status_code=404, detail="Grade scheme not found")
+    if body.name is not None:
+        scheme.name = body.name
+    if body.components is not None:
+        scheme.components = [c.model_dump() for c in body.components]
+    if body.is_default is not None:
+        if body.is_default:
+            # Clear existing default first
+            await db.execute(
+                select(GradeScheme).where(
+                    GradeScheme.school_id == school_id,
+                    GradeScheme.is_default.is_(True),
+                )
+            )
+            existing = (await db.execute(
+                select(GradeScheme).where(
+                    GradeScheme.school_id == school_id,
+                    GradeScheme.is_default.is_(True),
+                )
+            )).scalars().all()
+            for s in existing:
+                s.is_default = False
+        scheme.is_default = body.is_default
+    await db.commit()
+    await db.refresh(scheme)
+    return scheme
+
+
+@router.delete("/schemes/{scheme_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_grade_scheme(
+    scheme_id: uuid.UUID,
+    school_id: uuid.UUID = Depends(get_school_id),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(require_school_admin),
+):
+    result = await db.execute(
+        select(GradeScheme).where(GradeScheme.id == scheme_id, GradeScheme.school_id == school_id)
+    )
+    scheme = result.scalar_one_or_none()
+    if scheme is None:
+        raise HTTPException(status_code=404, detail="Grade scheme not found")
+    if scheme.is_default:
+        raise HTTPException(status_code=400, detail="Cannot delete the default scheme")
+    await db.delete(scheme)
+    await db.commit()
 
 
 def _annual_avg(finals: list[Optional[Decimal]]) -> Optional[Decimal]:
@@ -153,21 +271,42 @@ async def list_turma_subjects(
     q = q.order_by(Subject.order, Subject.name)
     rows = (await db.execute(q)).all()
 
+    # Resolve grade schemes (batch load)
+    scheme_ids = list({ts.grade_scheme_id for ts, _, _ in rows if ts.grade_scheme_id})
+    scheme_map: dict = {}
+    if scheme_ids:
+        sr = await db.execute(select(GradeScheme).where(GradeScheme.id.in_(scheme_ids)))
+        for s in sr.scalars().all():
+            scheme_map[s.id] = {"id": str(s.id), "name": s.name, "components": s.components}
+
+    # Resolve school default scheme
+    default_scheme = None
+    default_r = await db.execute(
+        select(GradeScheme).where(
+            GradeScheme.school_id == school_id,
+            GradeScheme.is_default.is_(True),
+        )
+    )
+    ds = default_r.scalar_one_or_none()
+    if ds:
+        default_scheme = {"id": str(ds.id), "name": ds.name, "components": ds.components}
+
     out = []
     for ts, subj, emp in rows:
-        teacher_name = None
-        if emp:
-            teacher_name = f"{emp.first_name} {emp.last_name}"
+        teacher_name = f"{emp.first_name} {emp.last_name}" if emp else None
+        resolved_scheme = scheme_map.get(ts.grade_scheme_id) if ts.grade_scheme_id else default_scheme
         out.append(TurmaSubjectResponse(
             id=ts.id,
             turma_id=ts.turma_id,
             subject_id=ts.subject_id,
             school_year_id=ts.school_year_id,
             teacher_id=ts.teacher_id,
+            grade_scheme_id=ts.grade_scheme_id,
             is_locked=ts.is_locked,
             subject_name=subj.name,
             subject_code=subj.code,
             teacher_name=teacher_name,
+            grade_scheme=resolved_scheme,
         ))
     return out
 
@@ -305,12 +444,24 @@ async def list_marks(
     out = []
     for enrollment, child in sorted(enroll_rows, key=lambda r: (r[1].last_name or "", r[1].first_name or "")):
         mark = marks_map.get(enrollment.id)
+        # Reconstruct grade_components from stored JSONB or fall back to mac/exam columns
+        components = None
+        if mark:
+            if mark.grade_components:
+                components = mark.grade_components
+            else:
+                components = {}
+                if mark.mac_grade is not None:
+                    components["mac"] = float(mark.mac_grade)
+                if mark.exam_grade is not None:
+                    components["exam"] = float(mark.exam_grade)
         out.append(ClassMarkRow(
             enrollment_id=str(enrollment.id),
             child_name=f"{child.first_name} {child.last_name}",
             mac_grade=mark.mac_grade if mark else None,
             exam_grade=mark.exam_grade if mark else None,
             final_grade=mark.final_grade if mark else None,
+            grade_components=components,
             notes=mark.notes if mark else None,
             mark_id=str(mark.id) if mark else None,
         ))
@@ -330,6 +481,18 @@ async def bulk_upsert_marks(
     if current_user.employee_id:
         recorder_id = current_user.employee_id
 
+    # Resolve school default scheme for final computation fallback
+    default_scheme_components = None
+    ds_r = await db.execute(
+        select(GradeScheme).where(
+            GradeScheme.school_id == school_id,
+            GradeScheme.is_default.is_(True),
+        )
+    )
+    ds = ds_r.scalar_one_or_none()
+    if ds:
+        default_scheme_components = ds.components
+
     saved: list[Mark] = []
     for m in body.marks:
         # Verify enrollment belongs to this school
@@ -342,8 +505,46 @@ async def bulk_upsert_marks(
         if enroll is None:
             continue   # skip invalid
 
-        # Compute final if not overridden
-        final = m.final_grade if m.final_grade is not None else _compute_final(m.mac_grade, m.exam_grade)
+        # Build grade_components dict: from explicit map or fall back to mac/exam fields
+        grade_components = m.grade_components or {}
+        if m.mac_grade is not None:
+            grade_components["mac"] = float(m.mac_grade)
+        if m.exam_grade is not None:
+            grade_components["exam"] = float(m.exam_grade)
+
+        # Resolve subject scheme for this turma to compute final
+        ts_r = await db.execute(
+            select(TurmaSubject).join(
+                Schedule, Schedule.turma_id == TurmaSubject.turma_id
+            ).join(
+                Enrollment, Enrollment.schedule_id == Schedule.id
+            ).where(
+                Enrollment.id == m.enrollment_id,
+                TurmaSubject.subject_id == m.subject_id,
+                TurmaSubject.school_id == school_id,
+            )
+        )
+        ts = ts_r.scalars().first()
+        scheme_components = None
+        if ts and ts.grade_scheme_id:
+            sr = await db.execute(select(GradeScheme).where(GradeScheme.id == ts.grade_scheme_id))
+            sc = sr.scalar_one_or_none()
+            if sc:
+                scheme_components = sc.components
+        if scheme_components is None:
+            scheme_components = default_scheme_components
+
+        # Compute final
+        if m.final_grade is not None:
+            final = m.final_grade
+        elif scheme_components and grade_components:
+            final = _compute_final_from_scheme(scheme_components, grade_components)
+        else:
+            final = _compute_final(m.mac_grade, m.exam_grade)
+
+        # Sync mac_grade / exam_grade from components for backward compat
+        mac = Decimal(str(grade_components["mac"])) if "mac" in grade_components and grade_components["mac"] is not None else m.mac_grade
+        exam = Decimal(str(grade_components["exam"])) if "exam" in grade_components and grade_components["exam"] is not None else m.exam_grade
 
         # Try to find existing mark
         existing = (await db.execute(
@@ -355,9 +556,10 @@ async def bulk_upsert_marks(
         )).scalar_one_or_none()
 
         if existing:
-            existing.mac_grade = m.mac_grade
-            existing.exam_grade = m.exam_grade
+            existing.mac_grade = mac
+            existing.exam_grade = exam
             existing.final_grade = final
+            existing.grade_components = grade_components or None
             existing.notes = m.notes
             if recorder_id:
                 existing.recorded_by = recorder_id
@@ -368,9 +570,10 @@ async def bulk_upsert_marks(
                 enrollment_id=m.enrollment_id,
                 subject_id=m.subject_id,
                 trimester=m.trimester,
-                mac_grade=m.mac_grade,
-                exam_grade=m.exam_grade,
+                mac_grade=mac,
+                exam_grade=exam,
                 final_grade=final,
+                grade_components=grade_components or None,
                 notes=m.notes,
                 recorded_by=recorder_id,
             )

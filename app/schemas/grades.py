@@ -1,9 +1,38 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator
+
+
+# ─── GradeScheme ─────────────────────────────────────────────────────────────
+
+class GradeSchemeComponent(BaseModel):
+    key: str        # identifier: "mac", "exam", "c3", etc.
+    label: str      # display label: "MAC", "PE", "Exame Final", etc.
+    weight: float   # 0–1; all components in a scheme should sum to 1.0
+
+
+class GradeSchemeCreate(BaseModel):
+    name: str
+    components: list[GradeSchemeComponent]
+
+
+class GradeSchemeUpdate(BaseModel):
+    name: Optional[str] = None
+    components: Optional[list[GradeSchemeComponent]] = None
+    is_default: Optional[bool] = None
+
+
+class GradeSchemeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    school_id: uuid.UUID
+    name: str
+    components: list[Any]   # JSONB list as-is
+    is_default: bool
+    created_at: datetime
 
 
 # ─── Subject ─────────────────────────────────────────────────────────────────
@@ -40,11 +69,13 @@ class TurmaSubjectCreate(BaseModel):
     subject_id: uuid.UUID
     school_year_id: uuid.UUID
     teacher_id: Optional[uuid.UUID] = None
+    grade_scheme_id: Optional[uuid.UUID] = None
 
 
 class TurmaSubjectUpdate(BaseModel):
     teacher_id: Optional[uuid.UUID] = None
     is_locked: Optional[bool] = None
+    grade_scheme_id: Optional[uuid.UUID] = None
 
 
 class TurmaSubjectResponse(BaseModel):
@@ -54,12 +85,14 @@ class TurmaSubjectResponse(BaseModel):
     subject_id: uuid.UUID
     school_year_id: uuid.UUID
     teacher_id: Optional[uuid.UUID]
+    grade_scheme_id: Optional[uuid.UUID] = None
     is_locked: bool
 
     # denormalized for convenience
     subject_name: Optional[str] = None
     subject_code: Optional[str] = None
     teacher_name: Optional[str] = None
+    grade_scheme: Optional[Any] = None   # full scheme object (components, name)
 
 
 # ─── Mark ─────────────────────────────────────────────────────────────────────
@@ -71,6 +104,7 @@ class MarkUpsert(BaseModel):
     mac_grade: Optional[Decimal] = None
     exam_grade: Optional[Decimal] = None
     final_grade: Optional[Decimal] = None   # if None, computed automatically
+    grade_components: Optional[dict[str, Optional[float]]] = None  # {key: value}
     notes: Optional[str] = None
 
     @field_validator("trimester")
@@ -134,5 +168,6 @@ class ClassMarkRow(BaseModel):
     mac_grade: Optional[Decimal] = None
     exam_grade: Optional[Decimal] = None
     final_grade: Optional[Decimal] = None
+    grade_components: Optional[dict] = None   # {key: value} for all components
     notes: Optional[str] = None
     mark_id: Optional[str] = None

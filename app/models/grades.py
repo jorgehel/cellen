@@ -18,10 +18,34 @@ from sqlalchemy import (
     Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String,
     UniqueConstraint, func, CheckConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+
+
+class GradeScheme(Base):
+    """Evaluation method: defines the grade components and their weights.
+
+    components: list of {key, label, weight} where weights should sum to 1.0
+    Examples:
+      Angola standard: [{key:"mac", label:"MAC", weight:0.6}, {key:"exam", label:"PE", weight:0.4}]
+      Continuous: [{key:"mac", label:"Avaliação Contínua", weight:1.0}]
+      Tri-component: [{key:"mac", label:"Testes", weight:0.4}, {key:"exam", label:"Trabalhos", weight:0.3}, {key:"c3", label:"Exame Final", weight:0.3}]
+    """
+    __tablename__ = "grade_schemes"
+    __table_args__ = (
+        Index("ix_grade_schemes_school_id", "school_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    school_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("schools.id", ondelete="RESTRICT"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    components: Mapped[list] = mapped_column(JSONB, nullable=False)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Subject(Base):
@@ -75,6 +99,9 @@ class TurmaSubject(Base):
     teacher_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL"), nullable=True
     )
+    grade_scheme_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("grade_schemes.id", ondelete="SET NULL"), nullable=True
+    )
     is_locked: Mapped[bool] = mapped_column(Boolean, default=False)  # freeze grade entry
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -115,9 +142,11 @@ class Mark(Base):
     )
     trimester: Mapped[int] = mapped_column(Integer, nullable=False)   # 1 | 2 | 3
 
-    mac_grade: Mapped[Optional[Decimal]] = mapped_column(Numeric(4, 1))   # Avaliação Contínua
-    exam_grade: Mapped[Optional[Decimal]] = mapped_column(Numeric(4, 1))  # Prova Escrita
+    mac_grade: Mapped[Optional[Decimal]] = mapped_column(Numeric(4, 1))   # Avaliação Contínua / component "mac"
+    exam_grade: Mapped[Optional[Decimal]] = mapped_column(Numeric(4, 1))  # Prova Escrita / component "exam"
     final_grade: Mapped[Optional[Decimal]] = mapped_column(Numeric(4, 1)) # computed or overridden
+    # Flexible extra components beyond mac/exam (key→value). Always set on save.
+    grade_components: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(String(500))
 
     recorded_by: Mapped[Optional[uuid.UUID]] = mapped_column(
